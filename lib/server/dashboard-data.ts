@@ -4,6 +4,7 @@ import { getDomainService } from "@/lib/server/domain-service";
 export type DashboardData = {
   history: HistoryPayload;
   currentRun: RunSnapshot | null;
+  setupMessage: string | null;
 };
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -16,5 +17,6 @@ export async function getDashboardData(): Promise<DashboardData> {
   return {
     history,
     currentRun,
+    setupMessage: service.getSetupMessage(),
   };
 }

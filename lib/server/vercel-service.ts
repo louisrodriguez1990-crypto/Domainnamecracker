@@ -33,6 +33,10 @@ function mapWorkflowStatus(
 export class VercelDomainService {
   private readonly store = getVercelStore();
 
+  getSetupMessage() {
+    return null;
+  }
+
   async getHistory(): Promise<HistoryPayload> {
     return this.store.getHistory();
   }

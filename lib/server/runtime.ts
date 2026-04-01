@@ -8,8 +8,12 @@ export function getHostedDatabaseUrl(): string | null {
   );
 }
 
+export function isVercelDeployment(): boolean {
+  return process.env.VERCEL === "1";
+}
+
 export function isHostedRuntime(): boolean {
-  return Boolean(getHostedDatabaseUrl()) || process.env.VERCEL === "1";
+  return Boolean(getHostedDatabaseUrl());
 }
 
 export function requireHostedDatabaseUrl(): string {

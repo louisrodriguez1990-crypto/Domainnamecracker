@@ -52,7 +52,7 @@ function exportCsv(rows: string[][]) {
   URL.revokeObjectURL(href);
 }
 
-export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: RunSnapshot | null }) {
+export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: RunSnapshot | null; setupMessage?: string | null }) {
   const [history, setHistory] = useState(props.initialHistory);
   const [currentRun, setCurrentRun] = useState(props.initialRun);
   const [selectedTlds, setSelectedTlds] = useState<SupportedTld[]>(
@@ -208,9 +208,12 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
     }
   }
 
+  const setupLocked = Boolean(props.setupMessage);
+
   return (
     <main className="noise-grid min-h-screen px-4 py-6 sm:px-6 lg:px-10">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        {props.setupMessage ? <div className="rounded-[24px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-950">{props.setupMessage}</div> : null}
         <section className="glass-panel rounded-[36px] p-6 sm:p-8 lg:p-10">
           <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-5">
@@ -262,32 +265,32 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 <h2 className="mt-2 text-2xl font-semibold text-stone-900">Configure the search space</h2>
               </div>
               <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={startRun} disabled={Boolean(activeRun) || isSubmitting} className="rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-medium text-white transition hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Starting..." : "Start Search"}</button>
-                <button type="button" onClick={stopRun} disabled={!activeRun} className="rounded-full border border-stone-300 bg-white/75 px-5 py-3 text-sm font-medium text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">Stop Search</button>
+                <button type="button" onClick={startRun} disabled={setupLocked || Boolean(activeRun) || isSubmitting} className="rounded-full bg-[color:var(--accent)] px-5 py-3 text-sm font-medium text-white transition hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Starting..." : "Start Search"}</button>
+                <button type="button" onClick={stopRun} disabled={setupLocked || !activeRun} className="rounded-full border border-stone-300 bg-white/75 px-5 py-3 text-sm font-medium text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">Stop Search</button>
               </div>
             </div>
             <div className="mt-6 space-y-8">
               <div>
                 <p className="text-sm font-semibold text-stone-900">TLD focus</p>
                 <div className="mt-3 flex flex-wrap gap-3">
-                  {TLD_OPTIONS.map((tld) => <button key={tld} type="button" disabled={Boolean(activeRun)} onClick={() => setSelectedTlds((current) => toggleValue(current, tld))} className={cn("rounded-full border px-4 py-2 text-sm transition", selectedTlds.includes(tld) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-300 bg-white/70 text-stone-700", activeRun && "cursor-not-allowed opacity-60")}>.{tld}</button>)}
+                  {TLD_OPTIONS.map((tld) => <button key={tld} type="button" disabled={setupLocked || Boolean(activeRun)} onClick={() => setSelectedTlds((current) => toggleValue(current, tld))} className={cn("rounded-full border px-4 py-2 text-sm transition", selectedTlds.includes(tld) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-300 bg-white/70 text-stone-700", (activeRun || setupLocked) && "cursor-not-allowed opacity-60")}>.{tld}</button>)}
                 </div>
               </div>
               <div>
                 <p className="text-sm font-semibold text-stone-900">Name styles</p>
                 <div className="mt-3 grid gap-3">
-                  {STYLE_OPTIONS.map((style) => <button key={style.id} type="button" disabled={Boolean(activeRun)} onClick={() => setSelectedStyles((current) => toggleValue(current, style.id))} className={cn("rounded-[24px] border p-4 text-left transition", selectedStyles.includes(style.id) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white/70 text-stone-800", activeRun && "cursor-not-allowed opacity-60")}><p className="font-medium">{style.label}</p><p className={cn("mt-2 text-sm leading-6", selectedStyles.includes(style.id) ? "text-white/80" : "text-stone-600")}>{style.description}</p></button>)}
+                  {STYLE_OPTIONS.map((style) => <button key={style.id} type="button" disabled={setupLocked || Boolean(activeRun)} onClick={() => setSelectedStyles((current) => toggleValue(current, style.id))} className={cn("rounded-[24px] border p-4 text-left transition", selectedStyles.includes(style.id) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white/70 text-stone-800", (activeRun || setupLocked) && "cursor-not-allowed opacity-60")}><p className="font-medium">{style.label}</p><p className={cn("mt-2 text-sm leading-6", selectedStyles.includes(style.id) ? "text-white/80" : "text-stone-600")}>{style.description}</p></button>)}
                 </div>
               </div>
               <div>
                 <p className="text-sm font-semibold text-stone-900">Word sources</p>
                 <div className="mt-3 grid gap-3">
-                  {[...builtinSources, ...uploadedSources].map((source) => <button key={source.id} type="button" disabled={Boolean(activeRun)} onClick={() => setSelectedSources((current) => toggleValue(current, source.id))} className={cn("rounded-[24px] border p-4 text-left transition", selectedSources.includes(source.id) ? "border-[color:var(--teal)] bg-teal-50 text-stone-900" : "border-stone-200 bg-white/70 text-stone-800", activeRun && "cursor-not-allowed opacity-60")}><div className="flex items-center justify-between gap-3"><p className="font-medium">{source.name}</p><span className="rounded-full border border-stone-200 bg-white px-3 py-1 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.kind}</span></div><p className="mt-2 text-sm leading-6 text-stone-600">{source.description}</p><p className="mt-3 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.wordCount.toLocaleString("en-US")} words</p></button>)}
+                  {[...builtinSources, ...uploadedSources].map((source) => <button key={source.id} type="button" disabled={setupLocked || Boolean(activeRun)} onClick={() => setSelectedSources((current) => toggleValue(current, source.id))} className={cn("rounded-[24px] border p-4 text-left transition", selectedSources.includes(source.id) ? "border-[color:var(--teal)] bg-teal-50 text-stone-900" : "border-stone-200 bg-white/70 text-stone-800", (activeRun || setupLocked) && "cursor-not-allowed opacity-60")}><div className="flex items-center justify-between gap-3"><p className="font-medium">{source.name}</p><span className="rounded-full border border-stone-200 bg-white px-3 py-1 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.kind}</span></div><p className="mt-2 text-sm leading-6 text-stone-600">{source.description}</p><p className="mt-3 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.wordCount.toLocaleString("en-US")} words</p></button>)}
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2"><span className="text-sm font-semibold text-stone-900">Target hits</span><input type="number" min={1} max={100} value={targetHits} disabled={Boolean(activeRun)} onChange={(event) => setTargetHits(Number(event.target.value))} className="w-full rounded-2xl border border-stone-300 bg-white/80 px-4 py-3 text-sm outline-none focus:border-stone-500" /></label>
-                <label className="space-y-2"><span className="text-sm font-semibold text-stone-900">Minimum score</span><input type="number" min={0} max={100} value={scoreThreshold} disabled={Boolean(activeRun)} onChange={(event) => setScoreThreshold(Number(event.target.value))} className="w-full rounded-2xl border border-stone-300 bg-white/80 px-4 py-3 text-sm outline-none focus:border-stone-500" /></label>
+                <label className="space-y-2"><span className="text-sm font-semibold text-stone-900">Target hits</span><input type="number" min={1} max={100} value={targetHits} disabled={setupLocked || Boolean(activeRun)} onChange={(event) => setTargetHits(Number(event.target.value))} className="w-full rounded-2xl border border-stone-300 bg-white/80 px-4 py-3 text-sm outline-none focus:border-stone-500" /></label>
+                <label className="space-y-2"><span className="text-sm font-semibold text-stone-900">Minimum score</span><input type="number" min={0} max={100} value={scoreThreshold} disabled={setupLocked || Boolean(activeRun)} onChange={(event) => setScoreThreshold(Number(event.target.value))} className="w-full rounded-2xl border border-stone-300 bg-white/80 px-4 py-3 text-sm outline-none focus:border-stone-500" /></label>
               </div>
             </div>
           </section>
@@ -307,7 +310,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 <span className="mt-2 max-w-lg text-sm leading-6 text-stone-600">One word per line works well, but commas and whitespace are fine too. The uploader strips punctuation and keeps up to 500 unique terms.</span>
                 <input ref={fileInputRef} type="file" accept=".txt,.csv,text/plain,text/csv" className="mt-5 block text-sm text-stone-700" />
               </label>
-              <button type="button" onClick={uploadSource} disabled={isUploading} className="rounded-full border border-stone-300 bg-white/75 px-5 py-3 text-sm font-medium text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">{isUploading ? "Uploading..." : "Add Source"}</button>
+              <button type="button" onClick={uploadSource} disabled={setupLocked || isUploading} className="rounded-full border border-stone-300 bg-white/75 px-5 py-3 text-sm font-medium text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">{isUploading ? "Uploading..." : "Add Source"}</button>
             </div>
           </section>
         </div>
@@ -323,7 +326,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
               <button type="button" onClick={() => exportCsv([["domain", "score", "status", "checkedAt", "provider", "note"], ...hitFeed.map((hit) => [hit.domain, hit.score.toString(), hit.status, hit.checkedAt, hit.provider, hit.note])])} className="rounded-full border border-stone-300 bg-white/75 px-5 py-3 text-sm font-medium text-stone-800 transition hover:border-stone-500">Export CSV</button>
             </div>
             <div className="mt-6 space-y-3">
-              {hitFeed.length > 0 ? hitFeed.map((hit) => <article key={`${hit.runId}-${hit.id}`} className="rounded-[26px] border border-stone-200 bg-white/78 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xl font-semibold tracking-tight text-stone-950">{hit.domain}</p><p className="mt-2 text-sm leading-6 text-stone-600">Score {hit.score} | {hit.provider} | checked {formatDateTime(hit.checkedAt)}</p><p className="mt-2 text-sm leading-6 text-stone-600">{hit.note}</p></div><div className="flex items-center gap-3"><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm text-emerald-900">{hit.status}</span><button type="button" disabled={Boolean(activeRun) || isSubmitting} onClick={() => recheckDomain(hit.domain)} className="rounded-full border border-stone-300 px-4 py-2 text-sm text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">Recheck</button></div></div></article>) : <div className="rounded-[28px] border border-dashed border-stone-300 bg-white/70 px-6 py-10 text-center text-sm leading-7 text-stone-600">Start a run to populate this board with available names.</div>}
+              {hitFeed.length > 0 ? hitFeed.map((hit) => <article key={`${hit.runId}-${hit.id}`} className="rounded-[26px] border border-stone-200 bg-white/78 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xl font-semibold tracking-tight text-stone-950">{hit.domain}</p><p className="mt-2 text-sm leading-6 text-stone-600">Score {hit.score} | {hit.provider} | checked {formatDateTime(hit.checkedAt)}</p><p className="mt-2 text-sm leading-6 text-stone-600">{hit.note}</p></div><div className="flex items-center gap-3"><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm text-emerald-900">{hit.status}</span><button type="button" disabled={setupLocked || Boolean(activeRun) || isSubmitting} onClick={() => recheckDomain(hit.domain)} className="rounded-full border border-stone-300 px-4 py-2 text-sm text-stone-800 transition hover:border-stone-500 disabled:cursor-not-allowed disabled:opacity-50">Recheck</button></div></div></article>) : <div className="rounded-[28px] border border-dashed border-stone-300 bg-white/70 px-6 py-10 text-center text-sm leading-7 text-stone-600">Start a run to populate this board with available names.</div>}
             </div>
           </section>
           <section className="glass-panel rounded-[32px] p-6 sm:p-8">

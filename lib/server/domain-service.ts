@@ -4,8 +4,9 @@ import type {
   RunSnapshot,
   WordSource,
 } from "@/lib/domain/types";
+import { getBuiltInSources } from "@/lib/domain/builtins";
 import { RunManager, getRunManager } from "@/lib/server/run-manager";
-import { isHostedRuntime } from "@/lib/server/runtime";
+import { isHostedRuntime, isVercelDeployment } from "@/lib/server/runtime";
 import { getVercelDomainService } from "@/lib/server/vercel-service";
 
 export type DomainService = {
@@ -13,6 +14,7 @@ export type DomainService = {
   getLatestSnapshot(): Promise<RunSnapshot | null>;
   getRunSnapshot(runId: string): Promise<RunSnapshot | null>;
   listWordSources(): Promise<WordSource[]>;
+  getSetupMessage(): string | null;
   createUploadSource(input: {
     name: string;
     description: string;
@@ -41,6 +43,10 @@ class LocalDomainService implements DomainService {
     return this.manager.listWordSources();
   }
 
+  getSetupMessage() {
+    return null;
+  }
+
   async createUploadSource(input: {
     name: string;
     description: string;
@@ -58,8 +64,59 @@ class LocalDomainService implements DomainService {
   }
 }
 
+class SetupDomainService implements DomainService {
+  private readonly message =
+    "This Vercel deployment is online, but it still needs a Vercel Postgres integration before scans can run. Add Postgres in the Vercel dashboard and redeploy.";
+
+  async getHistory() {
+    return {
+      wordSources: getBuiltInSources(),
+      recentRuns: [],
+      recentHits: [],
+    };
+  }
+
+  async getLatestSnapshot() {
+    return null;
+  }
+
+  async getRunSnapshot() {
+    return null;
+  }
+
+  async listWordSources() {
+    return getBuiltInSources();
+  }
+
+  getSetupMessage() {
+    return this.message;
+  }
+
+  async createUploadSource(
+    input: {
+      name: string;
+      description: string;
+      words: string[];
+    },
+  ): Promise<WordSource> {
+    void input;
+    throw new Error(this.message);
+  }
+
+  async startRun(config: RunConfig): Promise<RunSnapshot> {
+    void config;
+    throw new Error(this.message);
+  }
+
+  async stopRun(runId: string): Promise<RunSnapshot | null> {
+    void runId;
+    return null;
+  }
+}
+
 declare global {
   var __domainHunterLocalService: LocalDomainService | undefined;
+  var __domainHunterSetupService: SetupDomainService | undefined;
 }
 
 function getLocalDomainService() {
@@ -70,9 +127,21 @@ function getLocalDomainService() {
   return global.__domainHunterLocalService;
 }
 
+function getSetupDomainService() {
+  if (!global.__domainHunterSetupService) {
+    global.__domainHunterSetupService = new SetupDomainService();
+  }
+
+  return global.__domainHunterSetupService;
+}
+
 export function getDomainService(): DomainService {
   if (isHostedRuntime()) {
     return getVercelDomainService();
+  }
+
+  if (isVercelDeployment()) {
+    return getSetupDomainService();
   }
 
   return getLocalDomainService();
