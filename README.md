@@ -1,13 +1,20 @@
 # Domain Availability Hunter
 
-Local `Next.js` app for generating domain candidates, checking `.com`, `.io`, and `.ai` availability, and persisting runs in SQLite so you do not repeat the same search twice.
+`Next.js` app for generating domain candidates, checking `.com`, `.io`, and `.ai` availability, and persisting runs so you do not repeat the same search twice.
+
+## Modes
+
+- Local mode: Uses SQLite plus the in-process worker you already had for local development.
+- Vercel mode: Uses hosted Postgres for persistence and Vercel Workflow for durable background scans.
+
+The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`, `DATABASE_URL`, or `NEON_DATABASE_URL`.
 
 ## What it does
 
 - Generates keyword compounds and brandable mashups from built-in and uploaded word lists
 - Scores candidates before they hit the availability worker
 - Checks domains with a best-effort RDAP provider by default
-- Stores word sources, runs, generated candidates, and check results in `data/domain-hunter.sqlite`
+- Stores word sources, runs, and check results so later scans can skip repeats
 - Lets you stop runs, export hits, and manually recheck domains from the UI
 
 ## Local development
@@ -19,29 +26,40 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploying to Vercel
+
+1. Create a Vercel project for this repo.
+2. Add a Postgres integration from the Vercel Marketplace.
+3. Redeploy so the database connection env vars are injected into the project.
+4. Push or deploy normally.
+
+This repo already includes Workflow support in `next.config.ts` and an explicit `vercel.json` with Fluid compute enabled for deployments.
+
+## Environment variables
+
+The app supports these database variables for hosted mode:
+
+```bash
+POSTGRES_URL_NON_POOLING=
+POSTGRES_URL=
+DATABASE_URL=
+NEON_DATABASE_URL=
+```
+
+Only one is needed.
+
+Optional external checker seam:
+
+```bash
+DOMAIN_CHECK_HTTP_URL=
+DOMAIN_CHECK_HTTP_TOKEN=
+```
+
+If set, the app will call your external availability endpoint instead of the built-in RDAP checker.
+
 ## Tests and verification
 
 ```bash
 npm test
 npm run build
-```
-
-## Optional external checker seam
-
-If you want to replace the built-in RDAP checker later, the app can call an external HTTP availability endpoint instead:
-
-```bash
-DOMAIN_CHECK_HTTP_URL=https://your-checker.example.com
-DOMAIN_CHECK_HTTP_TOKEN=your-token
-```
-
-The external endpoint should accept `POST` JSON with `{ "domain": "example.com" }` and return:
-
-```json
-{
-  "status": "available",
-  "checkedAt": "2026-04-01T12:00:00.000Z",
-  "confidence": 0.95,
-  "note": "Registrar API result"
-}
 ```

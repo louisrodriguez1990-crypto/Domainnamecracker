@@ -2,7 +2,7 @@ import { ZodError } from "zod";
 import { NextResponse } from "next/server";
 
 import { runConfigSchema } from "@/lib/domain/validation";
-import { getRunManager } from "@/lib/server/run-manager";
+import { getDomainService } from "@/lib/server/domain-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json();
     const config = runConfigSchema.parse(payload);
-    const snapshot = await getRunManager().startRun(config);
+    const snapshot = await getDomainService().startRun(config);
 
     return NextResponse.json(snapshot, { status: 201 });
   } catch (error) {

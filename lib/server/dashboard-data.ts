@@ -1,16 +1,20 @@
 import type { HistoryPayload, RunSnapshot } from "@/lib/domain/types";
-import { getRunManager } from "@/lib/server/run-manager";
+import { getDomainService } from "@/lib/server/domain-service";
 
 export type DashboardData = {
   history: HistoryPayload;
   currentRun: RunSnapshot | null;
 };
 
-export function getDashboardData(): DashboardData {
-  const manager = getRunManager();
+export async function getDashboardData(): Promise<DashboardData> {
+  const service = getDomainService();
+  const [history, currentRun] = await Promise.all([
+    service.getHistory(),
+    service.getLatestSnapshot(),
+  ]);
 
   return {
-    history: manager.getHistory(),
-    currentRun: manager.getLatestSnapshot(),
+    history,
+    currentRun,
   };
 }

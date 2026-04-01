@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { parseWordUpload } from "@/lib/domain/normalization";
 import { uploadSourceSchema } from "@/lib/domain/validation";
-import { getRunManager } from "@/lib/server/run-manager";
+import { getDomainService } from "@/lib/server/domain-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const source = getRunManager().createUploadSource({
+    const source = await getDomainService().createUploadSource({
       name: metadata.name,
       description: metadata.description ?? "Uploaded custom word list.",
       words,
