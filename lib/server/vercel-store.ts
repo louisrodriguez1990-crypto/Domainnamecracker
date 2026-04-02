@@ -1,8 +1,13 @@
-import { getBuiltInSources } from "@/lib/domain/builtins";
+import {
+  getBuiltInSources,
+  getPublicBuiltInSources,
+  sortWordSources,
+} from "@/lib/domain/builtins";
 import type {
   AvailabilityResult,
   Candidate,
   CandidateStyle,
+  GeneratedCandidateStyle,
   HistoryPayload,
   RunConfig,
   RunRecord,
@@ -32,7 +37,7 @@ type RunRow = {
   id: string;
   status: RunStatus;
   selected_tlds: SupportedTld[];
-  enabled_styles: Array<Extract<CandidateStyle, "keyword" | "brandable">>;
+  enabled_styles: GeneratedCandidateStyle[];
   word_source_ids: string[];
   target_hits: number;
   concurrency: number;
@@ -245,26 +250,6 @@ export class VercelStore {
     await this.sql`create index if not exists run_results_status_idx on run_results(status)`;
     await this.sql`create index if not exists run_results_checked_at_idx on run_results(checked_at desc)`;
 
-    const builtIns = getBuiltInSources();
-
-    for (const source of builtIns) {
-      await this.sql`
-        insert into word_sources (
-          id, name, kind, description, payload, word_count, created_at, updated_at
-        )
-        values (
-          ${source.id},
-          ${source.name},
-          ${source.kind},
-          ${source.description},
-          ${this.sql.json(source.buckets)},
-          ${source.wordCount},
-          ${source.createdAt},
-          ${source.updatedAt}
-        )
-        on conflict (id) do nothing
-      `;
-    }
   }
 
   async hasActiveRun(): Promise<boolean> {
@@ -279,12 +264,17 @@ export class VercelStore {
 
   async listWordSources(): Promise<WordSource[]> {
     await this.init();
-    const rows = await this.sql<WordSourceRow[]>`
+    const builtInIds = new Set(getBuiltInSources().map((source) => source.id));
+    const uploads = await this.sql<WordSourceRow[]>`
       select *
       from word_sources
       order by kind desc, name asc
     `;
-    return rows.map(mapWordSource);
+
+    return sortWordSources([
+      ...getPublicBuiltInSources(),
+      ...uploads.map(mapWordSource).filter((source) => !builtInIds.has(source.id)),
+    ]);
   }
 
   async getWordSourcesByIds(ids: string[]) {
@@ -293,12 +283,26 @@ export class VercelStore {
       return [];
     }
 
-    const rows = await this.sql<WordSourceRow[]>`
+    const builtInSources = new Map(
+      getBuiltInSources().map((source) => [source.id, source] as const),
+    );
+    const uploads = await this.sql<WordSourceRow[]>`
       select *
       from word_sources
       where id = any(${ids})
     `;
-    return rows.map(mapWordSource);
+    const uploadsById = new Map(
+      uploads
+        .map((row) => {
+        const source = mapWordSource(row);
+        return [source.id, source] as const;
+      })
+        .filter(([id]) => !builtInSources.has(id)),
+    );
+
+    return ids
+      .map((id) => builtInSources.get(id) ?? uploadsById.get(id) ?? null)
+      .filter((source): source is WordSource => Boolean(source));
   }
 
   async createUploadSource(input: {
@@ -426,6 +430,16 @@ export class VercelStore {
     await this.sql`
       update runs
       set stop_requested = true,
+          updated_at = now()
+      where id = ${runId}
+    `;
+  }
+
+  async setLastError(runId: string, message: string | null) {
+    await this.init();
+    await this.sql`
+      update runs
+      set last_error = ${message},
           updated_at = now()
       where id = ${runId}
     `;

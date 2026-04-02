@@ -2,12 +2,20 @@
 
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
-import type { HistoryPayload, RunSnapshot, SupportedTld, WordSource } from "@/lib/domain/types";
+import {
+  DICTIONARY_SOURCE_ID,
+  type GeneratedCandidateStyle,
+  type HistoryPayload,
+  type RunSnapshot,
+  type SupportedTld,
+  type WordSource,
+} from "@/lib/domain/types";
 
 const TLD_OPTIONS: SupportedTld[] = ["com", "io", "ai"];
 const STYLE_OPTIONS = [
   { id: "keyword" as const, label: "Keyword compounds", description: "Real-word combinations." },
   { id: "brandable" as const, label: "Brandable mashups", description: "Short clipped blends." },
+  { id: "single-word-com" as const, label: "Single-word .com", description: "Standalone words checked only on .com." },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -58,13 +66,18 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
   const [selectedTlds, setSelectedTlds] = useState<SupportedTld[]>(
     props.initialRun?.run.selectedTlds.length ? props.initialRun.run.selectedTlds : TLD_OPTIONS,
   );
-  const [selectedStyles, setSelectedStyles] = useState<Array<"keyword" | "brandable">>(
+  const [selectedStyles, setSelectedStyles] = useState<GeneratedCandidateStyle[]>(
     props.initialRun?.run.enabledStyles.length ? props.initialRun.run.enabledStyles : ["keyword", "brandable"],
   );
   const [selectedSources, setSelectedSources] = useState<string[]>(
     props.initialRun?.run.wordSourceIds.length
       ? props.initialRun.run.wordSourceIds
-      : props.initialHistory.wordSources.filter((source) => source.kind === "builtin").map((source) => source.id),
+      : props.initialHistory.wordSources
+          .filter(
+            (source) =>
+              source.kind === "builtin" && source.id !== DICTIONARY_SOURCE_ID,
+          )
+          .map((source) => source.id),
   );
   const [targetHits, setTargetHits] = useState(props.initialRun?.run.targetHits ?? 25);
   const [scoreThreshold, setScoreThreshold] = useState(props.initialRun?.run.scoreThreshold ?? 58);
@@ -222,7 +235,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 Generate valuable domain combinations and sift live availability without an LLM in the loop.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-stone-700 sm:text-lg">
-                Keyword compounds and brandable mashups are built from curated or uploaded words, scored in-app, then checked against RDAP with conservative retries and persistent history.
+                Keyword compounds, brandable mashups, and single-word `.com` ideas are built from curated or uploaded words, scored in-app, then checked against RDAP with conservative retries and persistent history.
               </p>
               <div className="flex flex-wrap gap-3 text-sm text-stone-800">
                 <span className="rounded-full border border-amber-200 bg-amber-100 px-4 py-2">Pure code generation</span>

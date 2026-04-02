@@ -1,8 +1,10 @@
 export const SUPPORTED_TLDS = ["com", "io", "ai"] as const;
-export const STYLE_OPTIONS = ["keyword", "brandable"] as const;
+export const STYLE_OPTIONS = ["keyword", "brandable", "single-word-com"] as const;
+export const DICTIONARY_SOURCE_ID = "builtin-dictionary";
 
 export type SupportedTld = (typeof SUPPORTED_TLDS)[number];
-export type CandidateStyle = (typeof STYLE_OPTIONS)[number] | "manual";
+export type GeneratedCandidateStyle = (typeof STYLE_OPTIONS)[number];
+export type CandidateStyle = GeneratedCandidateStyle | "manual";
 export type RunStatus =
   | "running"
   | "completed"
@@ -47,11 +49,12 @@ export type AvailabilityResult = {
   checkedAt: string;
   confidence: number;
   note: string;
+  retryAfterMs?: number | null;
 };
 
 export type RunConfig = {
   selectedTlds: SupportedTld[];
-  enabledStyles: Array<Extract<CandidateStyle, "keyword" | "brandable">>;
+  enabledStyles: GeneratedCandidateStyle[];
   wordSourceIds: string[];
   targetHits: number;
   concurrency: number;
@@ -64,7 +67,7 @@ export type RunRecord = {
   id: string;
   status: RunStatus;
   selectedTlds: SupportedTld[];
-  enabledStyles: Array<Extract<CandidateStyle, "keyword" | "brandable">>;
+  enabledStyles: GeneratedCandidateStyle[];
   wordSourceIds: string[];
   targetHits: number;
   concurrency: number;

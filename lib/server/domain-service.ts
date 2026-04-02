@@ -4,7 +4,7 @@ import type {
   RunSnapshot,
   WordSource,
 } from "@/lib/domain/types";
-import { getBuiltInSources } from "@/lib/domain/builtins";
+import { getPublicBuiltInSources } from "@/lib/domain/builtins";
 import { RunManager, getRunManager } from "@/lib/server/run-manager";
 import {
   getHostedDatabaseSetupMessage,
@@ -73,7 +73,7 @@ class SetupDomainService implements DomainService {
 
   async getHistory() {
     return {
-      wordSources: getBuiltInSources(),
+      wordSources: getPublicBuiltInSources(),
       recentRuns: [],
       recentHits: [],
     };
@@ -88,7 +88,7 @@ class SetupDomainService implements DomainService {
   }
 
   async listWordSources() {
-    return getBuiltInSources();
+    return getPublicBuiltInSources();
   }
 
   getSetupMessage() {

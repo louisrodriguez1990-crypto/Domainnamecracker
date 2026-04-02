@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyRdapPayload } from "@/lib/domain/availability";
+import {
+  classifyRdapPayload,
+  parseRetryAfterHeader,
+} from "@/lib/domain/availability";
 
 describe("RDAP classification", () => {
+  it("parses Retry-After values from seconds and dates", () => {
+    expect(parseRetryAfterHeader("45")).toBe(45_000);
+    expect(
+      parseRetryAfterHeader("Wed, 01 Apr 2026 12:00:30 GMT", Date.UTC(2026, 3, 1, 12, 0, 0)),
+    ).toBe(30_000);
+  });
+
   it("treats not found as available", () => {
     const result = classifyRdapPayload(404, { title: "Not Found" });
 
@@ -20,8 +30,9 @@ describe("RDAP classification", () => {
   });
 
   it("keeps throttled or broken responses as unknown", () => {
-    const result = classifyRdapPayload(429, {});
+    const result = classifyRdapPayload(429, {}, 15_000);
 
     expect(result.status).toBe("unknown");
+    expect(result.retryAfterMs).toBe(15_000);
   });
 });

@@ -16,6 +16,32 @@ type ProviderFactoryOptions = {
 
 type RdapClassification = Omit<AvailabilityResult, "domain" | "checkedAt" | "provider">;
 
+export function parseRetryAfterHeader(value: string | null, nowMs = Date.now()) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const seconds = Number(trimmed);
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+
+  const retryAt = Date.parse(trimmed);
+
+  if (!Number.isNaN(retryAt)) {
+    return Math.max(retryAt - nowMs, 0);
+  }
+
+  return null;
+}
+
 function extractRdapNote(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") {
     return fallback;
@@ -36,6 +62,7 @@ function extractRdapNote(payload: unknown, fallback: string): string {
 export function classifyRdapPayload(
   responseStatus: number,
   payload: unknown,
+  retryAfterMs: number | null = null,
 ): RdapClassification {
   if (responseStatus === 404 || responseStatus === 410 || responseStatus === 204) {
     return {
@@ -49,7 +76,8 @@ export function classifyRdapPayload(
     return {
       status: "unknown",
       confidence: 0.2,
-      note: "RDAP rate limited the request.",
+      note: extractRdapNote(payload, "RDAP rate limited the request."),
+      retryAfterMs: retryAfterMs ?? 60_000,
     };
   }
 
@@ -58,6 +86,7 @@ export function classifyRdapPayload(
       status: "unknown",
       confidence: 0.28,
       note: "RDAP returned a server error.",
+      retryAfterMs,
     };
   }
 
@@ -184,10 +213,19 @@ class BootstrapRdapProvider implements AvailabilityProvider {
       const payload = contentType.includes("json")
         ? await response.json().catch(() => null)
         : await response.text().catch(() => null);
+      const retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
 
-      const classification = classifyRdapPayload(response.status, payload);
+      const classification = classifyRdapPayload(
+        response.status,
+        payload,
+        retryAfterMs,
+      );
 
-      if (classification.status !== "unknown" || response.status < 500) {
+      if (
+        classification.status !== "unknown" ||
+        response.status < 500 ||
+        classification.retryAfterMs
+      ) {
         return {
           domain,
           provider: this.name,
@@ -230,6 +268,7 @@ class ExternalRegistrarProvider implements AvailabilityProvider {
       body: JSON.stringify({ domain }),
       cache: "no-store",
     });
+    const retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
 
     if (!response.ok) {
       return {
@@ -238,7 +277,14 @@ class ExternalRegistrarProvider implements AvailabilityProvider {
         provider: this.name,
         checkedAt: new Date().toISOString(),
         confidence: 0.16,
-        note: `External registrar returned status ${response.status}.`,
+        note:
+          response.status === 429
+            ? "External registrar rate limited the request."
+            : `External registrar returned status ${response.status}.`,
+        retryAfterMs:
+          response.status === 429
+            ? retryAfterMs ?? 60_000
+            : retryAfterMs,
       };
     }
 
@@ -251,6 +297,7 @@ class ExternalRegistrarProvider implements AvailabilityProvider {
       checkedAt: payload.checkedAt ?? new Date().toISOString(),
       confidence: payload.confidence ?? 0.5,
       note: payload.note ?? "External registrar response.",
+      retryAfterMs: payload.retryAfterMs ?? retryAfterMs,
     };
   }
 }

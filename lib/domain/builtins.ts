@@ -1,10 +1,31 @@
-import type { WordBuckets, WordSource } from "@/lib/domain/types";
+import fs from "node:fs";
+
+import wordListPath from "word-list";
+
+import {
+  DICTIONARY_SOURCE_ID,
+  type WordBuckets,
+  type WordSource,
+} from "@/lib/domain/types";
 import { normalizeWords } from "@/lib/domain/normalization";
 
 type BuiltinDefinition = Omit<
   WordSource,
   "createdAt" | "updatedAt" | "wordCount"
 > & { buckets: WordBuckets };
+
+const LARGE_SOURCE_BUCKETS: WordBuckets = {
+  adjectives: [],
+  nouns: [],
+  verbs: [],
+  modifiers: [],
+  cores: [],
+  general: [],
+};
+
+const PUBLIC_BUCKET_LIMIT = 5000;
+
+let cachedDictionaryWords: string[] | null = null;
 
 function normalizeBuckets(buckets: WordBuckets): WordBuckets {
   return {
@@ -17,7 +38,19 @@ function normalizeBuckets(buckets: WordBuckets): WordBuckets {
   };
 }
 
-const BUILTIN_DEFINITIONS: BuiltinDefinition[] = [
+function getDictionaryWords(): string[] {
+  if (!cachedDictionaryWords) {
+    const rawWords = fs.readFileSync(wordListPath, "utf8").split(/\r?\n/g);
+
+    cachedDictionaryWords = normalizeWords(rawWords).filter(
+      (word) => word.length >= 4 && word.length <= 14,
+    );
+  }
+
+  return cachedDictionaryWords;
+}
+
+const CURATED_BUILTIN_DEFINITIONS: BuiltinDefinition[] = [
   {
     id: "builtin-ai",
     name: "AI Momentum",
@@ -260,18 +293,64 @@ const BUILTIN_DEFINITIONS: BuiltinDefinition[] = [
   },
 ];
 
-export function getBuiltInSources(now = new Date().toISOString()): WordSource[] {
-  return BUILTIN_DEFINITIONS.map((source) => {
-    const wordCount = Object.values(source.buckets).reduce(
-      (total, bucket) => total + bucket.length,
-      0,
-    );
+function createDictionaryDefinition(): BuiltinDefinition {
+  return {
+    id: DICTIONARY_SOURCE_ID,
+    name: "Dictionary Sweep",
+    kind: "builtin",
+    description:
+      "A full English word list for exhaustive single-word .com sweeps.",
+    buckets: {
+      ...LARGE_SOURCE_BUCKETS,
+      general: getDictionaryWords(),
+    },
+  };
+}
 
-    return {
-      ...source,
-      wordCount,
-      createdAt: now,
-      updatedAt: now,
-    };
-  });
+function toWordSource(
+  source: BuiltinDefinition,
+  now: string,
+  publicSummary: boolean,
+): WordSource {
+  const wordCount = Object.values(source.buckets).reduce(
+    (total, bucket) => total + bucket.length,
+    0,
+  );
+  const buckets =
+    publicSummary && wordCount > PUBLIC_BUCKET_LIMIT
+      ? LARGE_SOURCE_BUCKETS
+      : source.buckets;
+
+  return {
+    ...source,
+    buckets,
+    wordCount,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function sortWordSources<T extends Pick<WordSource, "kind" | "name">>(
+  sources: T[],
+): T[] {
+  return [...sources].sort(
+    (left, right) =>
+      right.kind.localeCompare(left.kind) || left.name.localeCompare(right.name),
+  );
+}
+
+export function getBuiltInSources(now = new Date().toISOString()): WordSource[] {
+  return [
+    ...CURATED_BUILTIN_DEFINITIONS.map((source) => toWordSource(source, now, false)),
+    toWordSource(createDictionaryDefinition(), now, false),
+  ];
+}
+
+export function getPublicBuiltInSources(
+  now = new Date().toISOString(),
+): WordSource[] {
+  return [
+    ...CURATED_BUILTIN_DEFINITIONS.map((source) => toWordSource(source, now, true)),
+    toWordSource(createDictionaryDefinition(), now, true),
+  ];
 }

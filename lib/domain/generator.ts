@@ -1,9 +1,10 @@
-import type {
-  Candidate,
-  RunConfig,
-  SupportedTld,
-  WordBuckets,
-  WordSource,
+import {
+  DICTIONARY_SOURCE_ID,
+  type Candidate,
+  type RunConfig,
+  type SupportedTld,
+  type WordBuckets,
+  type WordSource,
 } from "@/lib/domain/types";
 import { normalizeManualDomain, normalizeWords } from "@/lib/domain/normalization";
 
@@ -17,6 +18,7 @@ type CandidatePools = {
 };
 
 const MAX_POOL_SIZE = 72;
+const MAX_STANDALONE_WORDS = 300000;
 const MAX_CANDIDATES = 18000;
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);
 const VALUE_TERMS = new Set([
@@ -46,24 +48,26 @@ function capAndSort(words: string[]): string[] {
 }
 
 function compilePools(sources: WordSource[]): CandidatePools {
-  const merged = sources.reduce<WordBuckets>(
-    (accumulator, source) => ({
-      adjectives: [...accumulator.adjectives, ...source.buckets.adjectives],
-      nouns: [...accumulator.nouns, ...source.buckets.nouns],
-      verbs: [...accumulator.verbs, ...source.buckets.verbs],
-      modifiers: [...accumulator.modifiers, ...source.buckets.modifiers],
-      cores: [...accumulator.cores, ...source.buckets.cores],
-      general: [...accumulator.general, ...source.buckets.general],
-    }),
-    {
-      adjectives: [],
-      nouns: [],
-      verbs: [],
-      modifiers: [],
-      cores: [],
-      general: [],
-    },
-  );
+  const merged = sources
+    .filter((source) => source.id !== DICTIONARY_SOURCE_ID)
+    .reduce<WordBuckets>(
+      (accumulator, source) => ({
+        adjectives: [...accumulator.adjectives, ...source.buckets.adjectives],
+        nouns: [...accumulator.nouns, ...source.buckets.nouns],
+        verbs: [...accumulator.verbs, ...source.buckets.verbs],
+        modifiers: [...accumulator.modifiers, ...source.buckets.modifiers],
+        cores: [...accumulator.cores, ...source.buckets.cores],
+        general: [...accumulator.general, ...source.buckets.general],
+      }),
+      {
+        adjectives: [],
+        nouns: [],
+        verbs: [],
+        modifiers: [],
+        cores: [],
+        general: [],
+      },
+    );
 
   const general = capAndSort(merged.general);
 
@@ -75,6 +79,25 @@ function compilePools(sources: WordSource[]): CandidatePools {
     cores: capAndSort([...merged.cores, ...general]),
     general,
   };
+}
+
+function compileStandaloneWords(sources: WordSource[]): string[] {
+  return [...normalizeWords([
+    ...sources.flatMap((source) => source.buckets.general),
+    ...sources.flatMap((source) => source.buckets.nouns),
+    ...sources.flatMap((source) => source.buckets.cores),
+    ...sources.flatMap((source) => source.buckets.verbs),
+    ...sources.flatMap((source) => source.buckets.adjectives),
+    ...sources.flatMap((source) => source.buckets.modifiers),
+  ])]
+    .filter((word) => word.length >= 4 && word.length <= 14)
+    .sort((left, right) => {
+      const valueBoost =
+        Number(VALUE_TERMS.has(right)) - Number(VALUE_TERMS.has(left));
+
+      return valueBoost || left.length - right.length || left.localeCompare(right);
+    })
+    .slice(0, MAX_STANDALONE_WORDS);
 }
 
 function hasAwkwardCluster(value: string): boolean {
@@ -100,6 +123,8 @@ export function scoreCandidate(label: string, sourceWords: string[]): number {
 
   let score = 46;
   const ratio = vowelRatio(label);
+  const primarySource = sourceWords[0] ?? label;
+  const secondarySource = sourceWords[1] ?? null;
 
   if (label.length >= 5 && label.length <= 12) {
     score += 16;
@@ -125,11 +150,14 @@ export function scoreCandidate(label: string, sourceWords: string[]): number {
     score -= 10;
   }
 
-  if (sourceWords[0] === sourceWords[1]) {
+  if (secondarySource && primarySource === secondarySource) {
     score -= 14;
   }
 
-  if (VALUE_TERMS.has(sourceWords[0]) || VALUE_TERMS.has(sourceWords[1])) {
+  if (
+    VALUE_TERMS.has(primarySource) ||
+    (secondarySource ? VALUE_TERMS.has(secondarySource) : false)
+  ) {
     score += 8;
   }
 
@@ -148,8 +176,10 @@ function addCandidate(
   sourceWords: string[],
   style: Candidate["style"],
   scoreThreshold: number,
+  targetTlds = selectedTlds,
+  maxCandidates = MAX_CANDIDATES,
 ) {
-  if (candidates.length >= MAX_CANDIDATES || seenLabels.has(label)) {
+  if (candidates.length >= maxCandidates || seenLabels.has(label)) {
     return;
   }
 
@@ -165,7 +195,7 @@ function addCandidate(
     style,
     sourceWords,
     score,
-    fullDomains: selectedTlds.map((tld) => `${label}.${tld}`),
+    fullDomains: targetTlds.map((tld) => `${label}.${tld}`),
   });
 }
 
@@ -199,6 +229,10 @@ export function buildCandidates(
 ): Candidate[] {
   const scoreThreshold = config.scoreThreshold ?? 56;
   const pools = compilePools(sources);
+  const standaloneWords = compileStandaloneWords(sources);
+  const exhaustiveStandalone = sources.some(
+    (source) => source.id === DICTIONARY_SOURCE_ID,
+  );
   const candidates: Candidate[] = [];
   const seenLabels = new Set<string>();
 
@@ -304,6 +338,25 @@ export function buildCandidates(
           scoreThreshold,
         );
       }
+    }
+  }
+
+  if (
+    config.enabledStyles.includes("single-word-com") &&
+    config.selectedTlds.includes("com")
+  ) {
+    for (const word of standaloneWords) {
+      addCandidate(
+        candidates,
+        seenLabels,
+        config.selectedTlds,
+        word,
+        [word],
+        "single-word-com",
+        exhaustiveStandalone ? 0 : scoreThreshold,
+        ["com"],
+        MAX_STANDALONE_WORDS,
+      );
     }
   }
 

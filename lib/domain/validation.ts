@@ -7,7 +7,7 @@ const styleSchema = z.enum(STYLE_OPTIONS);
 
 export const runConfigSchema = z.object({
   selectedTlds: z.array(tldSchema).min(1).max(3),
-  enabledStyles: z.array(styleSchema).min(1).max(2),
+  enabledStyles: z.array(styleSchema).min(1).max(3),
   wordSourceIds: z.array(z.string().min(1)).min(1),
   targetHits: z.number().int().min(1).max(100).default(25),
   concurrency: z.number().int().min(1).max(2).default(2),

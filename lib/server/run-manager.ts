@@ -1,7 +1,14 @@
 import type { AvailabilityProvider } from "@/lib/domain/availability";
 import { createAvailabilityProvider } from "@/lib/domain/availability";
 import { buildCandidates, buildManualCandidates } from "@/lib/domain/generator";
+import {
+  formatCooldownMessage,
+  getCooldownDelayMs,
+  getRetryAfterMs,
+  getScanPacing,
+} from "@/lib/domain/pacing";
 import type {
+  AvailabilityResult,
   Candidate,
   HistoryPayload,
   RunConfig,
@@ -23,6 +30,8 @@ type RunTask = {
   manual: boolean;
 };
 
+const MAX_STORED_CANDIDATES = 25000;
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -33,7 +42,11 @@ function jitter(base: number, variation: number): number {
   return base + Math.floor(Math.random() * variation);
 }
 
-function toUnknownResult(domain: string, note: string, provider: string) {
+function toUnknownResult(
+  domain: string,
+  note: string,
+  provider: string,
+): AvailabilityResult {
   return {
     domain,
     status: "unknown" as const,
@@ -107,7 +120,10 @@ export class RunManager {
         : buildCandidates(config, selectedSources);
 
     const run = this.store.createRun(config, candidates.length);
-    this.store.storeCandidates(run.id, candidates);
+
+    if (candidates.length <= MAX_STORED_CANDIDATES) {
+      this.store.storeCandidates(run.id, candidates);
+    }
 
     const activeRun: ActiveRun = {
       stopRequested: false,
@@ -134,33 +150,88 @@ export class RunManager {
 
   private async processRun(runId: string, config: RunConfig, candidates: Candidate[]) {
     const activeRun = this.activeRuns.get(runId);
+    const pacing = getScanPacing(config);
 
     if (!activeRun) {
       return;
     }
 
-    const tasks: RunTask[] = candidates.flatMap((candidate) =>
-      candidate.fullDomains.map((domain) => ({
-        candidate,
-        domain,
-        manual: candidate.style === "manual",
-      })),
-    );
-
-    let index = 0;
+    let candidateIndex = 0;
+    let domainIndex = 0;
+    let cooldownUntilMs = 0;
+    let consecutiveRateLimits = 0;
 
     const nextTask = () => {
-      if (index >= tasks.length) {
-        return null;
+      while (candidateIndex < candidates.length) {
+        const candidate = candidates[candidateIndex];
+        const domain = candidate?.fullDomains[domainIndex];
+
+        if (candidate && domain) {
+          domainIndex += 1;
+
+          return {
+            candidate,
+            domain,
+            manual: candidate.style === "manual",
+          } satisfies RunTask;
+        }
+
+        candidateIndex += 1;
+        domainIndex = 0;
       }
 
-      const task = tasks[index];
-      index += 1;
-      return task;
+      return null;
+    };
+
+    const waitForCooldown = async () => {
+      while (!activeRun.stopRequested) {
+        const remainingMs = cooldownUntilMs - Date.now();
+
+        if (remainingMs <= 0) {
+          return;
+        }
+
+        const chunkMs = Math.min(remainingMs, 1_000);
+        const startedAt = Date.now();
+
+        await this.sleeper(chunkMs);
+
+        const elapsedMs = Date.now() - startedAt;
+
+        if (elapsedMs < chunkMs) {
+          cooldownUntilMs -= chunkMs - elapsedMs;
+        }
+      }
+    };
+
+    const handleRateLimitHint = (result: AvailabilityResult | null) => {
+      const retryAfterMs = result ? getRetryAfterMs(result) : null;
+
+      if (!retryAfterMs) {
+        if (consecutiveRateLimits > 0 && Date.now() >= cooldownUntilMs) {
+          consecutiveRateLimits = 0;
+        }
+
+        return;
+      }
+
+      consecutiveRateLimits += 1;
+      const cooldownMs = getCooldownDelayMs(
+        retryAfterMs,
+        consecutiveRateLimits,
+        pacing.baseCooldownMs,
+      );
+
+      cooldownUntilMs = Math.max(cooldownUntilMs, Date.now() + cooldownMs);
+      this.store.setLastError(
+        runId,
+        formatCooldownMessage(result?.note ?? "Availability provider asked us to retry later.", cooldownMs),
+      );
     };
 
     const worker = async () => {
       while (!activeRun.stopRequested) {
+        await waitForCooldown();
         const run = this.store.getRun(runId);
 
         if (!run || run.stopRequested || run.availableCount >= run.targetHits) {
@@ -174,14 +245,20 @@ export class RunManager {
           return;
         }
 
-        await this.processTask(runId, task, config);
-        await this.sleeper(jitter(320, 240));
+        const result = await this.processTask(runId, task, config, pacing);
+        handleRateLimitHint(result);
+
+        if (result) {
+          await this.sleeper(
+            jitter(pacing.interTaskDelayBaseMs, pacing.interTaskDelayVariationMs),
+          );
+        }
       }
     };
 
     try {
       await Promise.all(
-        Array.from({ length: Math.min(config.concurrency, 2) }, () => worker()),
+        Array.from({ length: pacing.workerCount }, () => worker()),
       );
 
       const finalRun = this.store.getRun(runId);
@@ -206,14 +283,19 @@ export class RunManager {
     }
   }
 
-  private async processTask(runId: string, task: RunTask, config: RunConfig) {
+  private async processTask(
+    runId: string,
+    task: RunTask,
+    config: RunConfig,
+    pacing: ReturnType<typeof getScanPacing>,
+  ) {
     if (!config.recheckExisting && !task.manual && this.store.getCheckedDomain(task.domain)) {
       this.store.incrementSkipped(runId, task.domain);
-      return;
+      return null;
     }
 
     this.store.setCurrentCandidate(runId, task.domain);
-    const result = await this.checkWithRetries(task.domain);
+    const result = await this.checkWithRetries(task.domain, pacing);
 
     this.store.recordCheckResult({
       runId,
@@ -232,9 +314,14 @@ export class RunManager {
         activeRun.stopRequested = true;
       }
     }
+
+    return result;
   }
 
-  private async checkWithRetries(domain: string) {
+  private async checkWithRetries(
+    domain: string,
+    pacing: ReturnType<typeof getScanPacing>,
+  ) {
     const providerName = this.provider.name;
     let lastUnknown = toUnknownResult(
       domain,
@@ -246,11 +333,14 @@ export class RunManager {
       try {
         const result = await this.provider.checkDomain(domain);
 
-        if (result.status !== "unknown" || attempt === 2) {
+        if (getRetryAfterMs(result) || result.status !== "unknown" || attempt === 2) {
           return result;
         }
 
-        lastUnknown = toUnknownResult(domain, result.note, result.provider);
+        lastUnknown = {
+          ...toUnknownResult(domain, result.note, result.provider),
+          retryAfterMs: result.retryAfterMs ?? null,
+        };
       } catch (error) {
         lastUnknown = toUnknownResult(
           domain,
@@ -259,7 +349,9 @@ export class RunManager {
         );
       }
 
-      await this.sleeper(jitter(450 * (attempt + 1), 250));
+      await this.sleeper(
+        jitter(pacing.unknownRetryBaseMs * (attempt + 1), pacing.unknownRetryVariationMs),
+      );
     }
 
     return lastUnknown;

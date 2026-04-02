@@ -4,7 +4,11 @@ import Database from "better-sqlite3";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
-import { getBuiltInSources } from "@/lib/domain/builtins";
+import {
+  getBuiltInSources,
+  getPublicBuiltInSources,
+  sortWordSources,
+} from "@/lib/domain/builtins";
 import type {
   AvailabilityResult,
   Candidate,
@@ -227,29 +231,7 @@ export class DomainHunterStore {
       CREATE INDEX IF NOT EXISTS run_results_checked_at_idx ON run_results(checked_at);
     `);
 
-    this.ensureBuiltIns();
     this.markInterruptedRuns();
-  }
-
-  private ensureBuiltIns() {
-    const builtIns = getBuiltInSources();
-
-    for (const source of builtIns) {
-      this.db
-        .insert(wordSourcesTable)
-        .values({
-          id: source.id,
-          name: source.name,
-          kind: source.kind,
-          description: source.description,
-          payload: JSON.stringify(source.buckets),
-          wordCount: source.wordCount,
-          createdAt: source.createdAt,
-          updatedAt: source.updatedAt,
-        })
-        .onConflictDoNothing()
-        .run();
-    }
   }
 
   private markInterruptedRuns() {
@@ -269,12 +251,18 @@ export class DomainHunterStore {
   }
 
   listWordSources(): WordSource[] {
-    return this.db
+    const builtInIds = new Set(getBuiltInSources().map((source) => source.id));
+    const uploads = this.db
       .select()
       .from(wordSourcesTable)
       .orderBy(desc(wordSourcesTable.kind), wordSourcesTable.name)
       .all()
       .map(mapWordSource);
+
+    return sortWordSources([
+      ...getPublicBuiltInSources(),
+      ...uploads.filter((source) => !builtInIds.has(source.id)),
+    ]);
   }
 
   getWordSourcesByIds(ids: string[]): WordSource[] {
@@ -282,12 +270,23 @@ export class DomainHunterStore {
       return [];
     }
 
-    return this.db
+    const builtInSources = new Map(
+      getBuiltInSources().map((source) => [source.id, source] as const),
+    );
+    const uploads = this.db
       .select()
       .from(wordSourcesTable)
       .where(inArray(wordSourcesTable.id, ids))
       .all()
-      .map(mapWordSource);
+      .map(mapWordSource)
+      .filter((source) => !builtInSources.has(source.id));
+    const uploadsById = new Map(
+      uploads.map((source) => [source.id, source] as const),
+    );
+
+    return ids
+      .map((id) => builtInSources.get(id) ?? uploadsById.get(id) ?? null)
+      .filter((source): source is WordSource => Boolean(source));
   }
 
   createUploadSource(input: {

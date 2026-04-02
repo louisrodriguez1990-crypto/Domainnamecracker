@@ -2,7 +2,18 @@ import { getWorkflowMetadata, sleep } from "workflow";
 
 import { createAvailabilityProvider } from "@/lib/domain/availability";
 import { buildCandidates, buildManualCandidates } from "@/lib/domain/generator";
-import type { Candidate, RunConfig, WordSource } from "@/lib/domain/types";
+import {
+  formatCooldownMessage,
+  getCooldownDelayMs,
+  getRetryAfterMs,
+  getScanPacing,
+} from "@/lib/domain/pacing";
+import type {
+  AvailabilityResult,
+  Candidate,
+  RunConfig,
+  WordSource,
+} from "@/lib/domain/types";
 import { getVercelStore } from "@/lib/server/vercel-store";
 
 type ScanTask = {
@@ -15,7 +26,11 @@ function jitter(base: number, variation: number): number {
   return base + Math.floor(Math.random() * variation);
 }
 
-function toUnknownResult(domain: string, note: string, provider: string) {
+function toUnknownResult(
+  domain: string,
+  note: string,
+  provider: string,
+): AvailabilityResult {
   return {
     domain,
     status: "unknown" as const,
@@ -60,7 +75,18 @@ async function finalizeRun(
   await getVercelStore().finishRun(runId, status, lastError);
 }
 
-async function checkWithRetries(domain: string) {
+async function updateRunError(runId: string, message: string | null) {
+  "use step";
+
+  await getVercelStore().setLastError(runId, message);
+}
+
+async function checkWithRetries(
+  domain: string,
+  pacing: ReturnType<typeof getScanPacing>,
+) {
+  "use step";
+
   const provider = createAvailabilityProvider();
   const providerName = provider.name;
   let lastUnknown = toUnknownResult(
@@ -73,11 +99,14 @@ async function checkWithRetries(domain: string) {
     try {
       const result = await provider.checkDomain(domain);
 
-      if (result.status !== "unknown" || attempt === 2) {
+      if (getRetryAfterMs(result) || result.status !== "unknown" || attempt === 2) {
         return result;
       }
 
-      lastUnknown = toUnknownResult(domain, result.note, result.provider);
+      lastUnknown = {
+        ...toUnknownResult(domain, result.note, result.provider),
+        retryAfterMs: result.retryAfterMs ?? null,
+      };
     } catch (error) {
       lastUnknown = toUnknownResult(
         domain,
@@ -87,14 +116,25 @@ async function checkWithRetries(domain: string) {
     }
 
     await new Promise((resolve) => {
-      setTimeout(resolve, jitter(450 * (attempt + 1), 250));
+      setTimeout(
+        resolve,
+        jitter(
+          pacing.unknownRetryBaseMs * (attempt + 1),
+          pacing.unknownRetryVariationMs,
+        ),
+      );
     });
   }
 
   return lastUnknown;
 }
 
-async function processBatch(runId: string, tasks: ScanTask[], recheckExisting = false) {
+async function processBatch(
+  runId: string,
+  tasks: ScanTask[],
+  pacing: ReturnType<typeof getScanPacing>,
+  recheckExisting = false,
+) {
   "use step";
 
   const store = getVercelStore();
@@ -116,7 +156,7 @@ async function processBatch(runId: string, tasks: ScanTask[], recheckExisting = 
     }
 
     await store.setCurrentCandidate(runId, task.domain);
-    const result = await checkWithRetries(task.domain);
+    const result = await checkWithRetries(task.domain, pacing);
 
     await store.recordCheckResult({
       runId,
@@ -125,15 +165,34 @@ async function processBatch(runId: string, tasks: ScanTask[], recheckExisting = 
       result,
       manual: task.manual,
     });
+
+    return result;
   };
 
-  await Promise.all(tasks.map((task) => handleTask(task)));
+  const results = await Promise.all(tasks.map((task) => handleTask(task)));
+  const rateLimitedResults = results.filter(
+    (result): result is AvailabilityResult => {
+      if (!result) {
+        return false;
+      }
+
+      return Boolean(getRetryAfterMs(result));
+    },
+  );
+  const cooldownHintMs =
+    rateLimitedResults.length > 0
+      ? Math.max(
+          ...rateLimitedResults.map((result) => getRetryAfterMs(result) ?? 0),
+        )
+      : null;
 
   const run = await store.getRun(runId);
 
   return {
     shouldStop: !run || run.stopRequested || run.availableCount >= run.targetHits,
     lastError: run?.lastError ?? null,
+    cooldownHintMs,
+    cooldownNote: rateLimitedResults[0]?.note ?? null,
   };
 }
 
@@ -157,17 +216,35 @@ export async function domainScanWorkflow(config: RunConfig) {
 
     await updateGeneratedCount(workflowRunId, candidates.length);
 
-    const tasks: ScanTask[] = candidates.flatMap((candidate) =>
-      candidate.fullDomains.map((domain) => ({
-        candidate,
-        domain,
-        manual: candidate.style === "manual",
-      })),
-    );
+    const pacing = getScanPacing(config);
+    const batchSize = Math.max(1, pacing.workerCount);
+    let candidateIndex = 0;
+    let domainIndex = 0;
+    let consecutiveRateLimits = 0;
 
-    const batchSize = Math.max(1, Math.min(config.concurrency, 2));
+    const nextTask = (): ScanTask | null => {
+      while (candidateIndex < candidates.length) {
+        const candidate = candidates[candidateIndex];
+        const domain = candidate?.fullDomains[domainIndex];
 
-    for (let index = 0; index < tasks.length; index += batchSize) {
+        if (candidate && domain) {
+          domainIndex += 1;
+
+          return {
+            candidate,
+            domain,
+            manual: candidate.style === "manual",
+          };
+        }
+
+        candidateIndex += 1;
+        domainIndex = 0;
+      }
+
+      return null;
+    };
+
+    while (true) {
       const run = await readRun(workflowRunId);
 
       if (!run) {
@@ -178,10 +255,26 @@ export async function domainScanWorkflow(config: RunConfig) {
         break;
       }
 
-      const batch = tasks.slice(index, index + batchSize);
+      const batch: ScanTask[] = [];
+
+      for (let index = 0; index < batchSize; index += 1) {
+        const task = nextTask();
+
+        if (!task) {
+          break;
+        }
+
+        batch.push(task);
+      }
+
+      if (batch.length === 0) {
+        break;
+      }
+
       const outcome = await processBatch(
         workflowRunId,
         batch,
+        pacing,
         config.recheckExisting ?? false,
       );
 
@@ -189,7 +282,32 @@ export async function domainScanWorkflow(config: RunConfig) {
         break;
       }
 
-      await sleep(`${jitter(320, 240)}ms`);
+      if (outcome.cooldownHintMs) {
+        consecutiveRateLimits += 1;
+        const cooldownMs = getCooldownDelayMs(
+          outcome.cooldownHintMs,
+          consecutiveRateLimits,
+          pacing.baseCooldownMs,
+        );
+
+        await updateRunError(
+          workflowRunId,
+          formatCooldownMessage(
+            outcome.cooldownNote ?? "Availability provider asked us to retry later.",
+            cooldownMs,
+          ),
+        );
+        await sleep(`${cooldownMs}ms`);
+        continue;
+      }
+
+      if (consecutiveRateLimits > 0) {
+        consecutiveRateLimits = 0;
+      }
+
+      await sleep(
+        `${jitter(pacing.interTaskDelayBaseMs, pacing.interTaskDelayVariationMs)}ms`,
+      );
     }
 
     const finalRun = await readRun(workflowRunId);

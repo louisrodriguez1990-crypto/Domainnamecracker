@@ -12,6 +12,7 @@ The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POO
 ## What it does
 
 - Generates keyword compounds and brandable mashups from built-in and uploaded word lists
+- Includes a dictionary-backed source for exhaustive single-word `.com` sweeps
 - Scores candidates before they hit the availability worker
 - Checks domains with a best-effort RDAP provider by default
 - Stores word sources, runs, and check results so later scans can skip repeats

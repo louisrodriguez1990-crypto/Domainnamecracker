@@ -9,10 +9,10 @@ export type DashboardData = {
 
 export async function getDashboardData(): Promise<DashboardData> {
   const service = getDomainService();
-  const [history, currentRun] = await Promise.all([
-    service.getHistory(),
-    service.getLatestSnapshot(),
-  ]);
+  // Hosted mode deliberately uses a single Postgres connection. Fetching both
+  // dashboard queries in parallel can stall that client, so keep them ordered.
+  const history = await service.getHistory();
+  const currentRun = await service.getLatestSnapshot();
 
   return {
     history,

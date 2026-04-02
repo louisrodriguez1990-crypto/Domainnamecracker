@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { AvailabilityProvider } from "@/lib/domain/availability";
-import type { AvailabilityResult } from "@/lib/domain/types";
+import {
+  DICTIONARY_SOURCE_ID,
+  type AvailabilityResult,
+} from "@/lib/domain/types";
 import { RunManager } from "@/lib/server/run-manager";
 import { DomainHunterStore } from "@/lib/server/store";
 
@@ -149,6 +152,64 @@ describe("run manager", () => {
     expect(firstFinished.run.checkedCount).toBeGreaterThan(0);
     expect(secondFinished.run.skippedCount).toBeGreaterThan(0);
     expect(secondFinished.run.checkedCount).toBe(0);
+
+    store.close();
+  });
+
+  it("applies a long cooldown when dictionary sweeps hit rate limits", async () => {
+    const store = new DomainHunterStore(":memory:");
+    const sleepCalls: number[] = [];
+    let checks = 0;
+    const manager = new RunManager({
+      store,
+      provider: new MockProvider((domain) => {
+        checks += 1;
+
+        if (checks === 1) {
+          return {
+            domain,
+            status: "unknown",
+            provider: "mock-rdap",
+            checkedAt: new Date().toISOString(),
+            confidence: 0.2,
+            note: "RDAP rate limited the request.",
+            retryAfterMs: 5_000,
+          };
+        }
+
+        return {
+          domain,
+          status: "taken",
+          provider: "mock-rdap",
+          checkedAt: new Date().toISOString(),
+          confidence: 0.9,
+          note: "taken",
+        };
+      }),
+      sleeper: async (ms) => {
+        sleepCalls.push(ms);
+      },
+    });
+
+    const snapshot = await manager.startRun({
+      selectedTlds: ["com"],
+      enabledStyles: ["single-word-com"],
+      wordSourceIds: [DICTIONARY_SOURCE_ID],
+      targetHits: 1,
+      concurrency: 2,
+      scoreThreshold: 0,
+      manualDomains: ["alpha.com", "beta.com"],
+      recheckExisting: true,
+    });
+
+    const finished = await waitForRun(manager, snapshot.run.id);
+    const totalCooldownSleepMs = sleepCalls
+      .filter((ms) => ms >= 1_000)
+      .reduce((total, ms) => total + ms, 0);
+
+    expect(finished.run.status).toBe("exhausted");
+    expect(totalCooldownSleepMs).toBeGreaterThanOrEqual(120_000);
+    expect(sleepCalls.some((ms) => ms >= 1_250 && ms < 5_000)).toBe(true);
 
     store.close();
   });
