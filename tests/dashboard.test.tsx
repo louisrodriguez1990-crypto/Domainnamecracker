@@ -124,7 +124,7 @@ describe("dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: /add source/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/Added Custom Upload as a reusable local source/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Added Custom Upload as a reusable source/i)).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByRole("button", { name: /start search/i }));

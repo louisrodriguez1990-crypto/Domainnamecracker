@@ -566,22 +566,23 @@ export class VercelStore {
 
   async getHistory(): Promise<HistoryPayload> {
     await this.init();
-    const [wordSources, recentRuns, recentHits] = await Promise.all([
-      this.listWordSources(),
-      this.sql<RunRow[]>`
-        select *
-        from runs
-        order by started_at desc
-        limit 12
-      `,
-      this.sql<RunResultRow[]>`
-        select *
-        from run_results
-        where status = 'available'
-        order by checked_at desc, id desc
-        limit 25
-      `,
-    ]);
+    // Hosted mode intentionally uses a single Postgres connection to stay gentle on
+    // pooled/serverless databases. Running these reads in parallel can stall on that
+    // single-connection client, so keep the dashboard history fetches sequential.
+    const wordSources = await this.listWordSources();
+    const recentRuns = await this.sql<RunRow[]>`
+      select *
+      from runs
+      order by started_at desc
+      limit 12
+    `;
+    const recentHits = await this.sql<RunResultRow[]>`
+      select *
+      from run_results
+      where status = 'available'
+      order by checked_at desc, id desc
+      limit 25
+    `;
 
     return {
       wordSources,

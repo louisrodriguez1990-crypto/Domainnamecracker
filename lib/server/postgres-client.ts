@@ -11,6 +11,7 @@ export function getPostgresClient() {
     global.__domainHunterPostgres = postgres(requireHostedDatabaseUrl(), {
       max: 1,
       ssl: "prefer",
+      // Supabase and other hosted poolers do not reliably support prepared statements.
       prepare: false,
     });
   }

@@ -6,7 +6,11 @@ import type {
 } from "@/lib/domain/types";
 import { getBuiltInSources } from "@/lib/domain/builtins";
 import { RunManager, getRunManager } from "@/lib/server/run-manager";
-import { isHostedRuntime, isVercelDeployment } from "@/lib/server/runtime";
+import {
+  getHostedDatabaseSetupMessage,
+  isHostedRuntime,
+  isVercelDeployment,
+} from "@/lib/server/runtime";
 import { getVercelDomainService } from "@/lib/server/vercel-service";
 
 export type DomainService = {
@@ -65,8 +69,7 @@ class LocalDomainService implements DomainService {
 }
 
 class SetupDomainService implements DomainService {
-  private readonly message =
-    "This Vercel deployment is online, but it still needs a Vercel Postgres integration before scans can run. Add Postgres in the Vercel dashboard and redeploy.";
+  private readonly message = getHostedDatabaseSetupMessage();
 
   async getHistory() {
     return {

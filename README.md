@@ -5,9 +5,9 @@
 ## Modes
 
 - Local mode: Uses SQLite plus the in-process worker you already had for local development.
-- Vercel mode: Uses hosted Postgres for persistence and Vercel Workflow for durable background scans.
+- Vercel mode: Uses hosted Postgres for persistence and Vercel Workflow for durable background scans. Supabase is the recommended hosted database for this path.
 
-The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`, `DATABASE_URL`, or `NEON_DATABASE_URL`.
+The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`, `DATABASE_URL`, `SUPABASE_DB_URL`, or `NEON_DATABASE_URL`.
 
 ## What it does
 
@@ -29,11 +29,11 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Deploying to Vercel
 
 1. Create a Vercel project for this repo.
-2. Add a Postgres integration from the Vercel Marketplace.
-3. Redeploy so the database connection env vars are injected into the project.
+2. Create a Supabase project and copy its pooled Postgres connection string.
+3. Add that connection string to Vercel as `DATABASE_URL` or `SUPABASE_DB_URL`.
 4. Push or deploy normally.
 
-This repo already includes Workflow support in `next.config.ts` and an explicit `vercel.json` with Fluid compute enabled for deployments.
+This repo already includes Workflow support in `next.config.ts` and an explicit `vercel.json` with Fluid compute enabled for deployments. The hosted database client keeps prepared statements disabled so Supabase poolers work cleanly.
 
 ## Environment variables
 
@@ -43,6 +43,7 @@ The app supports these database variables for hosted mode:
 POSTGRES_URL_NON_POOLING=
 POSTGRES_URL=
 DATABASE_URL=
+SUPABASE_DB_URL=
 NEON_DATABASE_URL=
 ```
 

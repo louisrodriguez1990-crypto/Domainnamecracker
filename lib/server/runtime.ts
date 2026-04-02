@@ -1,11 +1,21 @@
+const HOSTED_DATABASE_ENV_VARS = [
+  "POSTGRES_URL_NON_POOLING",
+  "POSTGRES_URL",
+  "DATABASE_URL",
+  "SUPABASE_DB_URL",
+  "NEON_DATABASE_URL",
+] as const;
+
 export function getHostedDatabaseUrl(): string | null {
-  return (
-    process.env.POSTGRES_URL_NON_POOLING ??
-    process.env.POSTGRES_URL ??
-    process.env.DATABASE_URL ??
-    process.env.NEON_DATABASE_URL ??
-    null
-  );
+  for (const envVar of HOSTED_DATABASE_ENV_VARS) {
+    const value = process.env[envVar];
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 export function isVercelDeployment(): boolean {
@@ -16,13 +26,15 @@ export function isHostedRuntime(): boolean {
   return Boolean(getHostedDatabaseUrl());
 }
 
+export function getHostedDatabaseSetupMessage(): string {
+  return "This Vercel deployment is online, but it still needs a hosted Postgres connection before scans can run. Add a Supabase pooled connection string as DATABASE_URL or SUPABASE_DB_URL and redeploy.";
+}
+
 export function requireHostedDatabaseUrl(): string {
   const url = getHostedDatabaseUrl();
 
   if (!url) {
-    throw new Error(
-      "This deployment needs a Postgres Marketplace integration on Vercel. Add one so the app receives POSTGRES_URL or DATABASE_URL.",
-    );
+    throw new Error(getHostedDatabaseSetupMessage());
   }
 
   return url;

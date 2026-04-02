@@ -175,7 +175,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
       setUploadName("");
       setUploadDescription("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setStatusMessage(`Added ${source.name} as a reusable local source.`);
+      setStatusMessage(`Added ${source.name} as a reusable source.`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
     } finally {
@@ -217,16 +217,16 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
         <section className="glass-panel rounded-[36px] p-6 sm:p-8 lg:p-10">
           <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-5">
-              <p className="font-mono text-xs uppercase tracking-[0.34em] text-stone-500">Local Domain Hunter</p>
+              <p className="font-mono text-xs uppercase tracking-[0.34em] text-stone-500">Domain Hunter</p>
               <h1 className="max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-stone-950 sm:text-5xl lg:text-6xl">
                 Generate valuable domain combinations and sift live availability without an LLM in the loop.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-stone-700 sm:text-lg">
-                Keyword compounds and brandable mashups are built from curated or uploaded words, scored locally, then checked against RDAP with conservative retries and local history.
+                Keyword compounds and brandable mashups are built from curated or uploaded words, scored in-app, then checked against RDAP with conservative retries and persistent history.
               </p>
               <div className="flex flex-wrap gap-3 text-sm text-stone-800">
                 <span className="rounded-full border border-amber-200 bg-amber-100 px-4 py-2">Pure code generation</span>
-                <span className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2">SQLite history and dedupe</span>
+                <span className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2">Persistent history and dedupe</span>
                 <span className="rounded-full border border-stone-300 bg-white/75 px-4 py-2">Best-effort RDAP checks</span>
               </div>
             </div>
@@ -298,7 +298,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
             <div className="border-b border-[color:var(--line)] pb-5">
               <p className="font-mono text-xs uppercase tracking-[0.3em] text-stone-500">Uploads</p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">Bring your own word list</h2>
-              <p className="mt-2 text-sm leading-6 text-stone-600">TXT and CSV uploads become reusable local sources. They are normalized, deduplicated, and folded into future runs.</p>
+              <p className="mt-2 text-sm leading-6 text-stone-600">TXT and CSV uploads become reusable sources. They are normalized, deduplicated, and folded into future runs.</p>
             </div>
             <div className="mt-6 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -345,7 +345,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
           <div className="border-b border-[color:var(--line)] pb-5">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-stone-500">History</p>
             <h2 className="mt-2 text-2xl font-semibold text-stone-900">Past runs and finish lines</h2>
-            <p className="mt-2 text-sm leading-6 text-stone-600">Every run is persisted locally so tomorrow&apos;s search does not recycle today&apos;s checked domains.</p>
+            <p className="mt-2 text-sm leading-6 text-stone-600">Every run is persisted in the active runtime so tomorrow&apos;s search does not recycle today&apos;s checked domains.</p>
           </div>
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             {history.recentRuns.length > 0 ? history.recentRuns.map((run) => <article key={run.id} className="rounded-[28px] border border-stone-200 bg-white/75 p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-xs uppercase tracking-[0.24em] text-stone-500">{run.selectedTlds.map((tld) => `.${tld}`).join(" ")}</p><p className="mt-2 text-xl font-semibold text-stone-950">{run.status === "exhausted" ? "Search space exhausted" : run.status}</p></div><span className={cn("rounded-full border px-3 py-1 text-sm capitalize", statusTone(run.status))}>{run.availableCount}/{run.targetHits}</span></div><div className="mt-4 grid grid-cols-3 gap-3 text-sm text-stone-600"><div><p className="font-mono text-xs uppercase tracking-[0.18em] text-stone-500">Generated</p><p className="mt-1 text-base font-medium text-stone-900">{run.generatedCount.toLocaleString("en-US")}</p></div><div><p className="font-mono text-xs uppercase tracking-[0.18em] text-stone-500">Checked</p><p className="mt-1 text-base font-medium text-stone-900">{run.checkedCount.toLocaleString("en-US")}</p></div><div><p className="font-mono text-xs uppercase tracking-[0.18em] text-stone-500">Skipped</p><p className="mt-1 text-base font-medium text-stone-900">{run.skippedCount.toLocaleString("en-US")}</p></div></div><p className="mt-4 text-sm leading-6 text-stone-600">Started {formatDateTime(run.startedAt)} | Finished {formatDateTime(run.finishedAt)}</p>{run.lastError ? <p className="mt-2 text-sm leading-6 text-stone-600">Last note: {run.lastError}</p> : null}</article>) : <div className="rounded-[28px] border border-dashed border-stone-300 bg-white/70 px-6 py-10 text-center text-sm leading-7 text-stone-600">Your run history will show up here after the first search completes or stops.</div>}
