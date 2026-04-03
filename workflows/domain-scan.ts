@@ -28,6 +28,11 @@ type ScanTask = {
   manual: boolean;
 };
 
+type ProviderContext = {
+  providerName: string;
+  usesHybridBatching: boolean;
+};
+
 function jitter(base: number, variation: number): number {
   return base + Math.floor(Math.random() * variation);
 }
@@ -140,18 +145,29 @@ async function checkWithRetries(
       );
     }
 
-    await new Promise((resolve) => {
-      setTimeout(
-        resolve,
-        jitter(
-          pacing.unknownRetryBaseMs * (attempt + 1),
-          pacing.unknownRetryVariationMs,
-        ),
-      );
-    });
+    await sleep(
+      `${jitter(
+        pacing.unknownRetryBaseMs * (attempt + 1),
+        pacing.unknownRetryVariationMs,
+      )}ms`,
+    );
   }
 
   return lastUnknown;
+}
+
+async function resolveProviderContext(preferNameCom = true): Promise<ProviderContext> {
+  "use step";
+
+  const provider = createAvailabilityProvider({ preferNameCom });
+  const context = {
+    providerName: provider.name,
+    usesHybridBatching: isHybridAvailabilityProvider(provider),
+  } satisfies ProviderContext;
+
+  console.log("[domainScanWorkflow] resolved provider context", context);
+
+  return context;
 }
 
 async function screenDomainsBatch(domains: string[]) {
@@ -276,6 +292,11 @@ export async function domainScanWorkflow(config: RunConfig) {
   const { workflowRunId } = getWorkflowMetadata();
 
   try {
+    console.log("[domainScanWorkflow] start", {
+      workflowRunId,
+      preferNameCom: config.preferNameCom ?? true,
+      manualDomainCount: config.manualDomains?.length ?? 0,
+    });
     await ensureRunRecord(workflowRunId, config);
 
     const sources =
@@ -291,14 +312,19 @@ export async function domainScanWorkflow(config: RunConfig) {
     await updateGeneratedCount(workflowRunId, candidates.length);
 
     const pacing = getScanPacing(config);
-    const provider = createAvailabilityProvider({
-      preferNameCom: config.preferNameCom ?? true,
-    });
+    const providerContext = await resolveProviderContext(
+      config.preferNameCom ?? true,
+    );
 
     if (
-      isHybridAvailabilityProvider(provider) &&
+      providerContext.usesHybridBatching &&
       (!config.manualDomains || config.manualDomains.length === 0)
     ) {
+      console.log("[domainScanWorkflow] entering hybrid batch mode", {
+        workflowRunId,
+        provider: providerContext.providerName,
+        candidateCount: candidates.length,
+      });
       let candidateIndex = 0;
       let domainIndex = 0;
       let consecutiveRateLimits = 0;
@@ -466,7 +492,7 @@ export async function domainScanWorkflow(config: RunConfig) {
               toUnknownResult(
                 task.domain,
                 "Availability check did not produce a stable result.",
-                provider.name,
+                providerContext.providerName,
               );
 
             await recordDefinitiveCheckResult({
@@ -519,6 +545,12 @@ export async function domainScanWorkflow(config: RunConfig) {
     }
 
     const batchSize = Math.max(1, pacing.workerCount);
+    console.log("[domainScanWorkflow] entering direct-check mode", {
+      workflowRunId,
+      provider: providerContext.providerName,
+      batchSize,
+      candidateCount: candidates.length,
+    });
     let candidateIndex = 0;
     let domainIndex = 0;
     let consecutiveRateLimits = 0;
