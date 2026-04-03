@@ -18,7 +18,9 @@ const STYLE_OPTIONS = [
   { id: "keyword" as const, label: "Keyword compounds", description: "Real-word combinations." },
   { id: "brandable" as const, label: "Brandable mashups", description: "Short clipped blends." },
   { id: "single-word-com" as const, label: "Single-word .com", description: "Standalone words checked only on .com." },
-  { id: "random-short-com" as const, label: "Pronounceable short .com", description: "Random 3, 4, and 5 letter names built from speakable letter patterns." },
+  { id: "random-3-com" as const, label: "Pronounceable 3-letter .com", description: "Random 3-letter names built from speakable letter patterns." },
+  { id: "random-4-com" as const, label: "Pronounceable 4-letter .com", description: "Random 4-letter names built from speakable letter patterns." },
+  { id: "random-5-com" as const, label: "Pronounceable 5-letter .com", description: "Random 5-letter names built from speakable letter patterns." },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -136,7 +138,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
     if (!selectedTlds.length) return setErrorMessage("Pick at least one TLD.");
     if (!selectedStyles.length) return setErrorMessage("Enable at least one name style.");
     if (requiresComOnlyStyles({ enabledStyles: selectedStyles }) && !selectedTlds.includes("com")) {
-      return setErrorMessage("Enable .com when you run single-word or short random .com scans.");
+      return setErrorMessage("Enable .com when you run single-word or pronounceable 3, 4, or 5 letter .com scans.");
     }
     if (!selectedSources.length && !allowsSourceFreeRun({ enabledStyles: selectedStyles })) {
       return setErrorMessage("Select at least one word source.");
@@ -243,7 +245,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 Generate valuable domain combinations and sift live availability without an LLM in the loop.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-stone-700 sm:text-lg">
-                Keyword compounds, brandable mashups, pronounceable short `.com` names, and single-word `.com` ideas are built in-app, scored locally, then checked against RDAP with conservative retries and persistent history.
+                Keyword compounds, brandable mashups, pronounceable 3, 4, and 5 letter `.com` names, and single-word `.com` ideas are built in-app, scored locally, then checked against RDAP with conservative retries and persistent history.
               </p>
               <div className="flex flex-wrap gap-3 text-sm text-stone-800">
                 <span className="rounded-full border border-amber-200 bg-amber-100 px-4 py-2">Pure code generation</span>

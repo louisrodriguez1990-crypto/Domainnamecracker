@@ -32,7 +32,7 @@ export const runConfigSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["selectedTlds"],
-      message: "Enable .com when you run single-word or short random .com scans.",
+      message: "Enable .com when you run single-word or pronounceable 3, 4, or 5 letter .com scans.",
     });
   }
 });

@@ -20,22 +20,26 @@ type CandidatePools = {
 const MAX_POOL_SIZE = 72;
 const MAX_STANDALONE_WORDS = 300000;
 const MAX_CANDIDATES = 18000;
-const MAX_RANDOM_SHORT_CANDIDATES = 6000;
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);
 const WEIGHTED_VOWELS = "aaaaaeeeeiiiooouu";
 const WEIGHTED_CONSONANTS = "bbbccddffgghhklllmmmnnnppprrrssstttvvwyyzz";
-const RANDOM_SHORT_PATTERNS = [
-  "cvc",
-  "vcv",
-  "cvcv",
-  "cvvc",
-  "vcvc",
-  "cvcc",
-  "cvcvc",
-  "cvccv",
-  "vcvcv",
-  "cvcvv",
-] as const;
+const RANDOM_SHORT_STYLE_CONFIG = {
+  "random-3-com": {
+    patterns: ["cvc", "vcv"] as const,
+    maxCandidates: 1200,
+    baseCount: 360,
+  },
+  "random-4-com": {
+    patterns: ["cvcv", "cvvc", "vcvc", "cvcc"] as const,
+    maxCandidates: 2400,
+    baseCount: 720,
+  },
+  "random-5-com": {
+    patterns: ["cvcvc", "cvccv", "vcvcv", "cvcvv"] as const,
+    maxCandidates: 3600,
+    baseCount: 960,
+  },
+} as const;
 const VALUE_TERMS = new Set([
   "ai",
   "agent",
@@ -249,7 +253,7 @@ function pickWeightedLetter(pool: string): string {
   return pool[Math.floor(Math.random() * pool.length)] ?? "a";
 }
 
-function buildPronounceableShortLabel(pattern: (typeof RANDOM_SHORT_PATTERNS)[number]) {
+function buildPronounceableShortLabel(pattern: string) {
   let label = "";
 
   for (const slot of pattern) {
@@ -267,6 +271,56 @@ function buildPronounceableShortLabel(pattern: (typeof RANDOM_SHORT_PATTERNS)[nu
   }
 
   return label;
+}
+
+function buildRandomShortCandidates(
+  candidates: Candidate[],
+  seenLabels: Set<string>,
+  config: RunConfig,
+  style: keyof typeof RANDOM_SHORT_STYLE_CONFIG,
+  scoreThreshold: number,
+) {
+  if (!config.selectedTlds.includes("com")) {
+    return;
+  }
+
+  const styleConfig = RANDOM_SHORT_STYLE_CONFIG[style];
+  const randomStartCount = candidates.length;
+  const targetCount = Math.min(
+    styleConfig.maxCandidates,
+    Math.max(config.targetHits * 160, styleConfig.baseCount),
+  );
+  const maxAttempts = targetCount * 12;
+  let attempts = 0;
+
+  while (
+    candidates.length - randomStartCount < targetCount &&
+    attempts < maxAttempts
+  ) {
+    const pattern =
+      styleConfig.patterns[
+        Math.floor(Math.random() * styleConfig.patterns.length)
+      ];
+    const label = pattern ? buildPronounceableShortLabel(pattern) : null;
+
+    attempts += 1;
+
+    if (!label) {
+      continue;
+    }
+
+    addCandidate(
+      candidates,
+      seenLabels,
+      config.selectedTlds,
+      label,
+      [label],
+      style,
+      scoreThreshold,
+      ["com"],
+      MAX_CANDIDATES,
+    );
+  }
 }
 
 export function buildCandidates(
@@ -406,46 +460,34 @@ export function buildCandidates(
     }
   }
 
-  if (
-    config.enabledStyles.includes("random-short-com") &&
-    config.selectedTlds.includes("com")
-  ) {
-    const randomStartCount = candidates.length;
-    const targetCount = Math.min(
-      MAX_RANDOM_SHORT_CANDIDATES,
-      Math.max(config.targetHits * 160, 900),
+  if (config.enabledStyles.includes("random-3-com")) {
+    buildRandomShortCandidates(
+      candidates,
+      seenLabels,
+      config,
+      "random-3-com",
+      scoreThreshold,
     );
-    const maxAttempts = targetCount * 10;
-    let attempts = 0;
+  }
 
-    while (
-      candidates.length - randomStartCount < targetCount &&
-      attempts < maxAttempts
-    ) {
-      const pattern =
-        RANDOM_SHORT_PATTERNS[
-          Math.floor(Math.random() * RANDOM_SHORT_PATTERNS.length)
-        ];
-      const label = pattern ? buildPronounceableShortLabel(pattern) : null;
+  if (config.enabledStyles.includes("random-4-com")) {
+    buildRandomShortCandidates(
+      candidates,
+      seenLabels,
+      config,
+      "random-4-com",
+      scoreThreshold,
+    );
+  }
 
-      attempts += 1;
-
-      if (!label) {
-        continue;
-      }
-
-      addCandidate(
-        candidates,
-        seenLabels,
-        config.selectedTlds,
-        label,
-        [label],
-        "random-short-com",
-        scoreThreshold,
-        ["com"],
-        MAX_CANDIDATES,
-      );
-    }
+  if (config.enabledStyles.includes("random-5-com")) {
+    buildRandomShortCandidates(
+      candidates,
+      seenLabels,
+      config,
+      "random-5-com",
+      scoreThreshold,
+    );
   }
 
   return candidates.sort(

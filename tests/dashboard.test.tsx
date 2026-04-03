@@ -141,14 +141,14 @@ describe("dashboard", () => {
     );
   });
 
-  it("allows pronounceable short .com runs without any word source selected", async () => {
+  it("allows pronounceable 4-letter .com runs without any word source selected", async () => {
     const shortRun: RunSnapshot = {
       ...startedRun,
       run: {
         ...startedRun.run,
         id: "run-short",
         status: "completed",
-        enabledStyles: ["random-short-com"],
+        enabledStyles: ["random-4-com"],
         wordSourceIds: [],
         selectedTlds: ["com"],
       },
@@ -174,7 +174,7 @@ describe("dashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /keyword compounds/i }));
     fireEvent.click(screen.getByRole("button", { name: /brandable mashups/i }));
-    fireEvent.click(screen.getByRole("button", { name: /pronounceable short \.com/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pronounceable 4-letter \.com/i }));
     fireEvent.click(screen.getByRole("button", { name: /ai momentum/i }));
     fireEvent.click(screen.getByRole("button", { name: /start search/i }));
 
@@ -192,7 +192,7 @@ describe("dashboard", () => {
         method: "POST",
         body: JSON.stringify({
           selectedTlds: ["com", "io", "ai"],
-          enabledStyles: ["random-short-com"],
+          enabledStyles: ["random-4-com"],
           wordSourceIds: [],
           targetHits: 25,
           concurrency: 2,

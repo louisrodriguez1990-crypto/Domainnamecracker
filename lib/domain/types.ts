@@ -3,17 +3,25 @@ export const STYLE_OPTIONS = [
   "keyword",
   "brandable",
   "single-word-com",
-  "random-short-com",
+  "random-3-com",
+  "random-4-com",
+  "random-5-com",
 ] as const;
 export const DICTIONARY_SOURCE_ID = "builtin-dictionary";
 
 export type SupportedTld = (typeof SUPPORTED_TLDS)[number];
 export type GeneratedCandidateStyle = (typeof STYLE_OPTIONS)[number];
 export type CandidateStyle = GeneratedCandidateStyle | "manual";
-const SOURCE_FREE_STYLES = new Set<GeneratedCandidateStyle>(["random-short-com"]);
+const SOURCE_FREE_STYLES = new Set<GeneratedCandidateStyle>([
+  "random-3-com",
+  "random-4-com",
+  "random-5-com",
+]);
 const COM_ONLY_STYLES = new Set<GeneratedCandidateStyle>([
   "single-word-com",
-  "random-short-com",
+  "random-3-com",
+  "random-4-com",
+  "random-5-com",
 ]);
 export type RunStatus =
   | "running"

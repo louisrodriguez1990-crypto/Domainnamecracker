@@ -66,33 +66,40 @@ describe("domain generator", () => {
     ).toBe(true);
   });
 
-  it("builds pronounceable random short .com candidates without word sources", () => {
-    const candidates = buildCandidates(
-      {
-        selectedTlds: ["com"],
-        enabledStyles: ["random-short-com"],
-        wordSourceIds: [],
-        targetHits: 25,
-        concurrency: 2,
-        scoreThreshold: 58,
-      },
-      [],
-    );
+  it("builds separate pronounceable 3, 4, and 5 letter .com candidate sets", () => {
+    const styleExpectations = [
+      { style: "random-3-com" as const, length: 3 },
+      { style: "random-4-com" as const, length: 4 },
+      { style: "random-5-com" as const, length: 5 },
+    ];
 
-    expect(candidates.length).toBeGreaterThan(100);
-    expect(
-      candidates.every(
-        (candidate) =>
-          candidate.fullDomains.length === 1 &&
-          candidate.fullDomains[0]?.endsWith(".com") &&
-          candidate.label.length >= 3 &&
-          candidate.label.length <= 5 &&
-          /[aeiou]/.test(candidate.label),
-      ),
-    ).toBe(true);
-    expect(new Set(candidates.map((candidate) => candidate.label)).size).toBe(
-      candidates.length,
-    );
+    for (const { style, length } of styleExpectations) {
+      const candidates = buildCandidates(
+        {
+          selectedTlds: ["com"],
+          enabledStyles: [style],
+          wordSourceIds: [],
+          targetHits: 25,
+          concurrency: 2,
+          scoreThreshold: 58,
+        },
+        [],
+      );
+
+      expect(candidates.length).toBeGreaterThan(100);
+      expect(
+        candidates.every(
+          (candidate) =>
+            candidate.fullDomains.length === 1 &&
+            candidate.fullDomains[0]?.endsWith(".com") &&
+            candidate.label.length === length &&
+            /[aeiou]/.test(candidate.label),
+        ),
+      ).toBe(true);
+      expect(
+        new Set(candidates.map((candidate) => candidate.label)).size,
+      ).toBe(candidates.length);
+    }
   });
 
   it("keeps the large dictionary source out of the dashboard payload buckets", () => {
