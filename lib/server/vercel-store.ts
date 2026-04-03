@@ -7,7 +7,6 @@ import type {
   AvailabilityResult,
   Candidate,
   CandidateStyle,
-  GeneratedCandidateStyle,
   HistoryPayload,
   RunConfig,
   RunRecord,
@@ -18,6 +17,7 @@ import type {
   WordBuckets,
   WordSource,
 } from "@/lib/domain/types";
+import { coerceEnabledStyles } from "@/lib/domain/types";
 import { getPostgresClient } from "@/lib/server/postgres-client";
 
 type PostgresPrimitive = string | number | boolean | Date | null;
@@ -37,7 +37,7 @@ type RunRow = {
   id: string;
   status: RunStatus;
   selected_tlds: SupportedTld[];
-  enabled_styles: GeneratedCandidateStyle[];
+  enabled_styles: string[];
   word_source_ids: string[];
   target_hits: number;
   concurrency: number;
@@ -118,7 +118,7 @@ function mapRun(row: RunRow): RunRecord {
     id: row.id,
     status: row.status,
     selectedTlds: row.selected_tlds,
-    enabledStyles: row.enabled_styles,
+    enabledStyles: coerceEnabledStyles(row.enabled_styles),
     wordSourceIds: row.word_source_ids,
     targetHits: row.target_hits,
     concurrency: row.concurrency,

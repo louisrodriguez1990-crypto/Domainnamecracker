@@ -23,6 +23,7 @@ import type {
   WordBuckets,
   WordSource,
 } from "@/lib/domain/types";
+import { coerceEnabledStyles } from "@/lib/domain/types";
 import {
   candidatesTable,
   checkedDomainsTable,
@@ -74,11 +75,13 @@ function mapWordSource(row: WordSourceRow): WordSource {
 }
 
 function mapRun(row: RunRow): RunRecord {
+  const rawEnabledStyles = parseJson<string[]>(row.enabledStyles, []);
+
   return {
     id: row.id,
     status: row.status as RunStatus,
     selectedTlds: parseJson<SupportedTld[]>(row.selectedTlds, []),
-    enabledStyles: parseJson<RunRecord["enabledStyles"]>(row.enabledStyles, []),
+    enabledStyles: coerceEnabledStyles(rawEnabledStyles),
     wordSourceIds: parseJson<string[]>(row.wordSourceIds, []),
     targetHits: row.targetHits,
     concurrency: row.concurrency,

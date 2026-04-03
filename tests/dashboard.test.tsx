@@ -201,4 +201,70 @@ describe("dashboard", () => {
       }),
     );
   });
+
+  it("normalizes legacy short-name styles from a saved run before starting again", async () => {
+    const legacyRun: RunSnapshot = {
+      ...startedRun,
+      run: {
+        ...startedRun.run,
+        id: "run-legacy",
+        status: "completed",
+        enabledStyles: ["random-3-com", "random-4-com", "random-5-com"],
+        wordSourceIds: [],
+        selectedTlds: ["com"],
+      },
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/runs") {
+        return jsonResponse(legacyRun, 201);
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse(baseHistory);
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <Dashboard
+        initialHistory={baseHistory}
+        initialRun={{
+          ...legacyRun,
+          run: {
+            ...legacyRun.run,
+            enabledStyles: ["random-short-com" as never],
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /start search/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Scan started\. The worker is cycling through fresh candidates\./i)).toBeInTheDocument(),
+    );
+
+    const runRequest = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/runs",
+    );
+
+    expect(runRequest?.[1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          selectedTlds: ["com"],
+          enabledStyles: ["random-3-com", "random-4-com", "random-5-com"],
+          wordSourceIds: [],
+          targetHits: 25,
+          concurrency: 2,
+          scoreThreshold: 58,
+        }),
+      }),
+    );
+  });
 });

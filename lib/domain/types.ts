@@ -12,6 +12,7 @@ export const DICTIONARY_SOURCE_ID = "builtin-dictionary";
 export type SupportedTld = (typeof SUPPORTED_TLDS)[number];
 export type GeneratedCandidateStyle = (typeof STYLE_OPTIONS)[number];
 export type CandidateStyle = GeneratedCandidateStyle | "manual";
+const GENERATED_STYLE_SET = new Set<string>(STYLE_OPTIONS);
 const SOURCE_FREE_STYLES = new Set<GeneratedCandidateStyle>([
   "random-3-com",
   "random-4-com",
@@ -23,6 +24,9 @@ const COM_ONLY_STYLES = new Set<GeneratedCandidateStyle>([
   "random-4-com",
   "random-5-com",
 ]);
+const LEGACY_STYLE_ALIASES: Record<string, GeneratedCandidateStyle[]> = {
+  "random-short-com": ["random-3-com", "random-4-com", "random-5-com"],
+};
 export type RunStatus =
   | "running"
   | "completed"
@@ -80,6 +84,33 @@ export type RunConfig = {
   manualDomains?: string[];
   recheckExisting?: boolean;
 };
+
+export function expandLegacyEnabledStyles(styles: readonly string[]) {
+  const expanded: string[] = [];
+
+  for (const style of styles) {
+    const aliases = LEGACY_STYLE_ALIASES[style];
+
+    if (aliases) {
+      expanded.push(...aliases);
+      continue;
+    }
+
+    expanded.push(style);
+  }
+
+  return [...new Set(expanded)];
+}
+
+export function coerceEnabledStyles(styles: readonly string[] | null | undefined) {
+  if (!styles?.length) {
+    return [] as GeneratedCandidateStyle[];
+  }
+
+  return expandLegacyEnabledStyles(styles).filter(
+    (style): style is GeneratedCandidateStyle => GENERATED_STYLE_SET.has(style),
+  );
+}
 
 export function allowsSourceFreeRun(
   config: Pick<RunConfig, "enabledStyles" | "manualDomains">,

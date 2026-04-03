@@ -5,6 +5,7 @@ import { startTransition, useEffect, useEffectEvent, useRef, useState } from "re
 import {
   DICTIONARY_SOURCE_ID,
   allowsSourceFreeRun,
+  coerceEnabledStyles,
   requiresComOnlyStyles,
   type GeneratedCandidateStyle,
   type HistoryPayload,
@@ -72,10 +73,12 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
     props.initialRun?.run.selectedTlds.length ? props.initialRun.run.selectedTlds : TLD_OPTIONS,
   );
   const [selectedStyles, setSelectedStyles] = useState<GeneratedCandidateStyle[]>(
-    props.initialRun?.run.enabledStyles.length ? props.initialRun.run.enabledStyles : ["keyword", "brandable"],
+    coerceEnabledStyles(props.initialRun?.run.enabledStyles).length
+      ? coerceEnabledStyles(props.initialRun?.run.enabledStyles)
+      : ["keyword", "brandable"],
   );
   const [selectedSources, setSelectedSources] = useState<string[]>(
-    props.initialRun?.run.wordSourceIds.length
+    props.initialRun
       ? props.initialRun.run.wordSourceIds
       : props.initialHistory.wordSources
           .filter(
