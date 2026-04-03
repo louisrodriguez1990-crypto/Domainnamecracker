@@ -123,19 +123,19 @@ declare global {
 }
 
 function getLocalDomainService() {
-  if (!global.__domainHunterLocalService) {
-    global.__domainHunterLocalService = new LocalDomainService(getRunManager());
+  if (!globalThis.__domainHunterLocalService) {
+    globalThis.__domainHunterLocalService = new LocalDomainService(getRunManager());
   }
 
-  return global.__domainHunterLocalService;
+  return globalThis.__domainHunterLocalService;
 }
 
 function getSetupDomainService() {
-  if (!global.__domainHunterSetupService) {
-    global.__domainHunterSetupService = new SetupDomainService();
+  if (!globalThis.__domainHunterSetupService) {
+    globalThis.__domainHunterSetupService = new SetupDomainService();
   }
 
-  return global.__domainHunterSetupService;
+  return globalThis.__domainHunterSetupService;
 }
 
 export function getDomainService(): DomainService {

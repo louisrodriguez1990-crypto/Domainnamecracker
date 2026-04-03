@@ -654,9 +654,9 @@ declare global {
 }
 
 export function getRunManager() {
-  if (!global.__domainHunterRunManager) {
-    global.__domainHunterRunManager = new RunManager();
+  if (!globalThis.__domainHunterRunManager) {
+    globalThis.__domainHunterRunManager = new RunManager();
   }
 
-  return global.__domainHunterRunManager;
+  return globalThis.__domainHunterRunManager;
 }

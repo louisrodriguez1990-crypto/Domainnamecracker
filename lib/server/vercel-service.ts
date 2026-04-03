@@ -126,9 +126,9 @@ declare global {
 }
 
 export function getVercelDomainService() {
-  if (!global.__domainHunterVercelService) {
-    global.__domainHunterVercelService = new VercelDomainService();
+  if (!globalThis.__domainHunterVercelService) {
+    globalThis.__domainHunterVercelService = new VercelDomainService();
   }
 
-  return global.__domainHunterVercelService;
+  return globalThis.__domainHunterVercelService;
 }

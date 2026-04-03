@@ -115,11 +115,11 @@ declare global {
 }
 
 function getNameComRateLimiter() {
-  if (!global.__domainHunterNameComRateLimiter) {
-    global.__domainHunterNameComRateLimiter = new RollingWindowRateLimiter();
+  if (!globalThis.__domainHunterNameComRateLimiter) {
+    globalThis.__domainHunterNameComRateLimiter = new RollingWindowRateLimiter();
   }
 
-  return global.__domainHunterNameComRateLimiter;
+  return globalThis.__domainHunterNameComRateLimiter;
 }
 
 function toUnknownBatchResults(

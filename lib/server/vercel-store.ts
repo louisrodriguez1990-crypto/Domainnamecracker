@@ -759,9 +759,9 @@ declare global {
 }
 
 export function getVercelStore() {
-  if (!global.__domainHunterVercelStore) {
-    global.__domainHunterVercelStore = new VercelStore();
+  if (!globalThis.__domainHunterVercelStore) {
+    globalThis.__domainHunterVercelStore = new VercelStore();
   }
 
-  return global.__domainHunterVercelStore;
+  return globalThis.__domainHunterVercelStore;
 }

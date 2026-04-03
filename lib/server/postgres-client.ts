@@ -7,8 +7,8 @@ declare global {
 }
 
 export function getPostgresClient() {
-  if (!global.__domainHunterPostgres) {
-    global.__domainHunterPostgres = postgres(requireHostedDatabaseUrl(), {
+  if (!globalThis.__domainHunterPostgres) {
+    globalThis.__domainHunterPostgres = postgres(requireHostedDatabaseUrl(), {
       // Keep the pool small for serverless Postgres, but allow enough headroom
       // for concurrent page loads, polling, and workflow writes.
       max: 4,
@@ -18,5 +18,5 @@ export function getPostgresClient() {
     });
   }
 
-  return global.__domainHunterPostgres;
+  return globalThis.__domainHunterPostgres;
 }
