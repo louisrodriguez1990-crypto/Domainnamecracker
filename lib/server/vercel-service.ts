@@ -30,6 +30,37 @@ function mapWorkflowStatus(
     : "exhausted";
 }
 
+function shouldReplaceLastError(existing: string | null, candidate: string | null) {
+  if (!candidate) {
+    return false;
+  }
+
+  if (!existing) {
+    return true;
+  }
+
+  if (!existing.startsWith("[")) {
+    return true;
+  }
+
+  return false;
+}
+
+async function getWorkflowFailureMessage(
+  workflowRun: ReturnType<typeof getRun>,
+  existingLastError: string | null,
+) {
+  try {
+    await workflowRun.returnValue;
+    return existingLastError;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return shouldReplaceLastError(existingLastError, message)
+      ? message
+      : existingLastError;
+  }
+}
+
 export class VercelDomainService {
   private readonly store = getVercelStore();
 
@@ -113,7 +144,11 @@ export class VercelDomainService {
     const mappedStatus = mapWorkflowStatus(workflowStatus, snapshot);
 
     if (mappedStatus !== "running") {
-      await this.store.finishRun(runId, mappedStatus, snapshot.run.lastError);
+      const lastError =
+        mappedStatus === "interrupted"
+          ? await getWorkflowFailureMessage(workflowRun, snapshot.run.lastError)
+          : snapshot.run.lastError;
+      await this.store.finishRun(runId, mappedStatus, lastError);
       return this.store.getRunSnapshot(runId);
     }
 

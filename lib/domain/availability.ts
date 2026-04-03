@@ -226,8 +226,31 @@ function mapByDomain<T extends { domainName?: string }>(items: T[] | undefined) 
   );
 }
 
+function toErrorMessage(
+  error: unknown,
+  fallback: string,
+) {
+  return error instanceof Error
+    ? error.message
+    : typeof error === "string" && error.trim()
+      ? error
+      : fallback;
+}
+
+function encodeBase64(value: string) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(value, "utf-8").toString("base64");
+  }
+
+  if (typeof globalThis.btoa === "function") {
+    return globalThis.btoa(value);
+  }
+
+  throw new Error("No base64 encoder is available in this runtime.");
+}
+
 export function createNameComAuthorizationHeader(username: string, token: string) {
-  return `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
+  return `Basic ${encodeBase64(`${username}:${token}`)}`;
 }
 
 export function hasNameComCredentials() {
@@ -573,36 +596,52 @@ class NameComProvider implements HybridAvailabilityProvider {
 
     await this.rateLimiter.waitForSlot();
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        authorization: this.authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ domainNames: domains }),
-      cache: "no-store",
-    });
-    const checkedAt = new Date().toISOString();
-    const retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
-    const payload = await readResponsePayload(response);
-
-    if (!response.ok) {
-      const note = extractNameComError(
-        payload,
-        `${label} returned status ${response.status}.`,
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          authorization: this.authorization,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ domainNames: domains }),
+        cache: "no-store",
+      });
+      const checkedAt = new Date().toISOString();
+      const retryAfterMs = parseRetryAfterHeader(
+        response.headers.get("retry-after"),
       );
+      const payload = await readResponsePayload(response);
 
+      if (!response.ok) {
+        const note = extractNameComError(
+          payload,
+          `${label} returned status ${response.status}.`,
+        );
+
+        return toUnknownBatchResults(
+          domains,
+          this.name,
+          note,
+          checkedAt,
+          response.status === 429 ? retryAfterMs ?? 60_000 : retryAfterMs,
+          stage,
+        );
+      }
+
+      return classify(domains, payload, checkedAt);
+    } catch (error) {
       return toUnknownBatchResults(
         domains,
         this.name,
-        note,
-        checkedAt,
-        response.status === 429 ? retryAfterMs ?? 60_000 : retryAfterMs,
+        `${label} request failed: ${toErrorMessage(
+          error,
+          "Unknown network error.",
+        )}`,
+        new Date().toISOString(),
+        null,
         stage,
       );
     }
-
-    return classify(domains, payload, checkedAt);
   }
 }
 
@@ -740,49 +779,66 @@ class ExternalRegistrarProvider implements AvailabilityProvider {
   }
 
   async checkDomain(domain: string): Promise<AvailabilityResult> {
-    const response = await this.fetchImpl(this.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({ domain }),
-      cache: "no-store",
-    });
-    const retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
+    try {
+      const response = await this.fetchImpl(this.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: JSON.stringify({ domain }),
+        cache: "no-store",
+      });
+      const retryAfterMs = parseRetryAfterHeader(
+        response.headers.get("retry-after"),
+      );
 
-    if (!response.ok) {
+      if (!response.ok) {
+        return {
+          domain,
+          status: "unknown",
+          provider: this.name,
+          checkedAt: new Date().toISOString(),
+          confidence: 0.16,
+          note:
+            response.status === 429
+              ? "External registrar rate limited the request."
+              : `External registrar returned status ${response.status}.`,
+          stage: "definitive",
+          retryAfterMs:
+            response.status === 429
+              ? retryAfterMs ?? 60_000
+              : retryAfterMs,
+        };
+      }
+
+      const payload = (await response.json()) as Partial<AvailabilityResult>;
+
+      return {
+        domain,
+        status: payload.status ?? "unknown",
+        provider: payload.provider ?? this.name,
+        checkedAt: payload.checkedAt ?? new Date().toISOString(),
+        confidence: payload.confidence ?? 0.5,
+        note: payload.note ?? "External registrar response.",
+        stage: payload.stage ?? "definitive",
+        expiresAt: payload.expiresAt ?? null,
+        retryAfterMs: payload.retryAfterMs ?? retryAfterMs,
+      };
+    } catch (error) {
       return {
         domain,
         status: "unknown",
         provider: this.name,
         checkedAt: new Date().toISOString(),
-        confidence: 0.16,
-        note:
-          response.status === 429
-            ? "External registrar rate limited the request."
-            : `External registrar returned status ${response.status}.`,
+        confidence: 0.14,
+        note: `External registrar request failed: ${toErrorMessage(
+          error,
+          "Unknown network error.",
+        )}`,
         stage: "definitive",
-        retryAfterMs:
-          response.status === 429
-            ? retryAfterMs ?? 60_000
-            : retryAfterMs,
       };
     }
-
-    const payload = (await response.json()) as Partial<AvailabilityResult>;
-
-    return {
-      domain,
-      status: payload.status ?? "unknown",
-      provider: payload.provider ?? this.name,
-      checkedAt: payload.checkedAt ?? new Date().toISOString(),
-      confidence: payload.confidence ?? 0.5,
-      note: payload.note ?? "External registrar response.",
-      stage: payload.stage ?? "definitive",
-      expiresAt: payload.expiresAt ?? null,
-      retryAfterMs: payload.retryAfterMs ?? retryAfterMs,
-    };
   }
 }
 

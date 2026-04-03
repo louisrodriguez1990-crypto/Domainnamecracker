@@ -33,8 +33,41 @@ type ProviderContext = {
   usesHybridBatching: boolean;
 };
 
+type WorkflowStage =
+  | "start-run"
+  | "persist-run-record"
+  | "load-word-sources"
+  | "build-candidates"
+  | "update-generated-count"
+  | "resolve-provider-context"
+  | "read-run"
+  | "screen-batch"
+  | "persist-preliminary-results"
+  | "live-check-batch"
+  | "persist-definitive-result"
+  | "direct-batch"
+  | "finalize-run";
+
 function jitter(base: number, variation: number): number {
   return base + Math.floor(Math.random() * variation);
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : typeof error === "string" && error.trim()
+      ? error
+      : "Unexpected workflow error.";
+}
+
+export function formatWorkflowStageError(stage: WorkflowStage, error: unknown) {
+  return `[${stage}] ${getErrorMessage(error)}`;
 }
 
 function toUnknownResult(
@@ -55,19 +88,58 @@ function toUnknownResult(
 async function loadWordSources(wordSourceIds: string[]): Promise<WordSource[]> {
   "use step";
 
-  return getVercelStore().getWordSourcesByIds(wordSourceIds);
+  console.log("[domainScanWorkflow] load word sources:start", {
+    wordSourceCount: wordSourceIds.length,
+  });
+  const sources = await getVercelStore().getWordSourcesByIds(wordSourceIds);
+  console.log("[domainScanWorkflow] load word sources:done", {
+    resolvedSourceCount: sources.length,
+  });
+
+  return sources;
+}
+
+async function buildWorkflowCandidates(
+  config: RunConfig,
+  sources: WordSource[],
+): Promise<Candidate[]> {
+  "use step";
+
+  console.log("[domainScanWorkflow] build candidates:start", {
+    manualDomainCount: config.manualDomains?.length ?? 0,
+    sourceCount: sources.length,
+  });
+  const candidates =
+    config.manualDomains && config.manualDomains.length > 0
+      ? buildManualCandidates(config, config.manualDomains)
+      : buildCandidates(config, sources);
+  console.log("[domainScanWorkflow] build candidates:done", {
+    candidateCount: candidates.length,
+  });
+
+  return candidates;
 }
 
 async function ensureRunRecord(runId: string, config: RunConfig) {
   "use step";
 
+  console.log("[domainScanWorkflow] ensure run record:start", { runId });
   await getVercelStore().ensureRun(runId, config, 0);
+  console.log("[domainScanWorkflow] ensure run record:done", { runId });
 }
 
 async function updateGeneratedCount(runId: string, generatedCount: number) {
   "use step";
 
+  console.log("[domainScanWorkflow] update generated count:start", {
+    runId,
+    generatedCount,
+  });
   await getVercelStore().updateGeneratedCount(runId, generatedCount);
+  console.log("[domainScanWorkflow] update generated count:done", {
+    runId,
+    generatedCount,
+  });
 }
 
 async function readRun(runId: string) {
@@ -83,7 +155,16 @@ async function finalizeRun(
 ) {
   "use step";
 
+  console.log("[domainScanWorkflow] finalize run:start", {
+    runId,
+    status,
+    lastError,
+  });
   await getVercelStore().finishRun(runId, status, lastError);
+  console.log("[domainScanWorkflow] finalize run:done", {
+    runId,
+    status,
+  });
 }
 
 async function updateRunError(runId: string, message: string | null) {
@@ -145,11 +226,11 @@ async function checkWithRetries(
       );
     }
 
-    await sleep(
-      `${jitter(
+    await delay(
+      jitter(
         pacing.unknownRetryBaseMs * (attempt + 1),
         pacing.unknownRetryVariationMs,
-      )}ms`,
+      ),
     );
   }
 
@@ -159,13 +240,16 @@ async function checkWithRetries(
 async function resolveProviderContext(preferNameCom = true): Promise<ProviderContext> {
   "use step";
 
+  console.log("[domainScanWorkflow] resolve provider context:start", {
+    preferNameCom,
+  });
   const provider = createAvailabilityProvider({ preferNameCom });
   const context = {
     providerName: provider.name,
     usesHybridBatching: isHybridAvailabilityProvider(provider),
   } satisfies ProviderContext;
 
-  console.log("[domainScanWorkflow] resolved provider context", context);
+  console.log("[domainScanWorkflow] resolve provider context:done", context);
 
   return context;
 }
@@ -173,21 +257,38 @@ async function resolveProviderContext(preferNameCom = true): Promise<ProviderCon
 async function screenDomainsBatch(domains: string[]) {
   "use step";
 
+  console.log("[domainScanWorkflow] screen batch:start", {
+    domainCount: domains.length,
+  });
   const provider = createAvailabilityProvider({ preferNameCom: true });
 
   if (!isHybridAvailabilityProvider(provider)) {
     throw new Error("Batch screening requires a hybrid availability provider.");
   }
 
-  return provider.screenDomains(domains);
+  const results = await provider.screenDomains(domains);
+  console.log("[domainScanWorkflow] screen batch:done", {
+    domainCount: domains.length,
+    resultCount: results.length,
+  });
+
+  return results;
 }
 
 async function checkDomainsBatch(domains: string[]) {
   "use step";
 
+  console.log("[domainScanWorkflow] live batch:start", {
+    domainCount: domains.length,
+  });
   const provider = createAvailabilityProvider({ preferNameCom: true });
+  const results = await checkDomainsWithProvider(provider, domains);
+  console.log("[domainScanWorkflow] live batch:done", {
+    domainCount: domains.length,
+    resultCount: results.length,
+  });
 
-  return checkDomainsWithProvider(provider, domains);
+  return results;
 }
 
 async function recordPreliminaryBatch(input: {
@@ -202,7 +303,16 @@ async function recordPreliminaryBatch(input: {
 }) {
   "use step";
 
+  console.log("[domainScanWorkflow] record preliminary:start", {
+    runId: input.runId,
+    screenCount: input.screens.length,
+    checkedCountIncrement: input.checkedCountIncrement,
+  });
   await getVercelStore().recordPreliminaryBatch(input);
+  console.log("[domainScanWorkflow] record preliminary:done", {
+    runId: input.runId,
+    screenCount: input.screens.length,
+  });
 }
 
 async function recordDefinitiveCheckResult(input: {
@@ -215,7 +325,17 @@ async function recordDefinitiveCheckResult(input: {
 }) {
   "use step";
 
+  console.log("[domainScanWorkflow] record definitive:start", {
+    runId: input.runId,
+    domain: input.domain,
+    status: input.result.status,
+  });
   await getVercelStore().recordCheckResult(input);
+  console.log("[domainScanWorkflow] record definitive:done", {
+    runId: input.runId,
+    domain: input.domain,
+    status: input.result.status,
+  });
 }
 
 async function processBatch(
@@ -290,6 +410,7 @@ export async function domainScanWorkflow(config: RunConfig) {
   "use workflow";
 
   const { workflowRunId } = getWorkflowMetadata();
+  let currentStage: WorkflowStage = "start-run";
 
   try {
     console.log("[domainScanWorkflow] start", {
@@ -297,21 +418,23 @@ export async function domainScanWorkflow(config: RunConfig) {
       preferNameCom: config.preferNameCom ?? true,
       manualDomainCount: config.manualDomains?.length ?? 0,
     });
+    currentStage = "persist-run-record";
     await ensureRunRecord(workflowRunId, config);
 
+    currentStage = "load-word-sources";
     const sources =
       config.manualDomains && config.manualDomains.length > 0
         ? []
         : await loadWordSources(config.wordSourceIds);
 
-    const candidates =
-      config.manualDomains && config.manualDomains.length > 0
-        ? buildManualCandidates(config, config.manualDomains)
-        : buildCandidates(config, sources);
+    currentStage = "build-candidates";
+    const candidates = await buildWorkflowCandidates(config, sources);
 
+    currentStage = "update-generated-count";
     await updateGeneratedCount(workflowRunId, candidates.length);
 
     const pacing = getScanPacing(config);
+    currentStage = "resolve-provider-context";
     const providerContext = await resolveProviderContext(
       config.preferNameCom ?? true,
     );
@@ -352,6 +475,7 @@ export async function domainScanWorkflow(config: RunConfig) {
       };
 
       while (true) {
+        currentStage = "read-run";
         const run = await readRun(workflowRunId);
 
         if (!run || run.stopRequested || run.availableCount >= run.targetHits) {
@@ -383,6 +507,7 @@ export async function domainScanWorkflow(config: RunConfig) {
           break;
         }
 
+        currentStage = "screen-batch";
         await setCurrentCandidate(workflowRunId, screenBatch[0].domain);
         const screenResults = await screenDomainsBatch(
           screenBatch.map((task) => task.domain),
@@ -427,6 +552,7 @@ export async function domainScanWorkflow(config: RunConfig) {
         }
 
         if (screenedCount > 0) {
+          currentStage = "persist-preliminary-results";
           await recordPreliminaryBatch({
             runId: workflowRunId,
             screens: preliminaryScreens,
@@ -457,6 +583,7 @@ export async function domainScanWorkflow(config: RunConfig) {
           index < definitiveTasks.length;
           index += NAMECOM_CHECK_BATCH_SIZE
         ) {
+          currentStage = "read-run";
           const liveRun = await readRun(workflowRunId);
 
           if (
@@ -476,6 +603,7 @@ export async function domainScanWorkflow(config: RunConfig) {
             continue;
           }
 
+          currentStage = "live-check-batch";
           await setCurrentCandidate(workflowRunId, batch[0].domain);
           const liveResults = await checkDomainsBatch(
             batch.map((task) => task.domain),
@@ -495,6 +623,7 @@ export async function domainScanWorkflow(config: RunConfig) {
                 providerContext.providerName,
               );
 
+            currentStage = "persist-definitive-result";
             await recordDefinitiveCheckResult({
               runId: workflowRunId,
               candidate: task.candidate,
@@ -533,6 +662,7 @@ export async function domainScanWorkflow(config: RunConfig) {
         return { runId: workflowRunId };
       }
 
+      currentStage = "finalize-run";
       if (finalRun.availableCount >= finalRun.targetHits) {
         await finalizeRun(workflowRunId, "completed", finalRun.lastError);
       } else if (finalRun.stopRequested) {
@@ -578,6 +708,7 @@ export async function domainScanWorkflow(config: RunConfig) {
     };
 
     while (true) {
+      currentStage = "read-run";
       const run = await readRun(workflowRunId);
 
       if (!run) {
@@ -604,6 +735,7 @@ export async function domainScanWorkflow(config: RunConfig) {
         break;
       }
 
+      currentStage = "direct-batch";
       const outcome = await processBatch(
         workflowRunId,
         batch,
@@ -644,12 +776,14 @@ export async function domainScanWorkflow(config: RunConfig) {
       );
     }
 
+    currentStage = "read-run";
     const finalRun = await readRun(workflowRunId);
 
     if (!finalRun) {
       return { runId: workflowRunId };
     }
 
+    currentStage = "finalize-run";
     if (finalRun.availableCount >= finalRun.targetHits) {
       await finalizeRun(workflowRunId, "completed", finalRun.lastError);
     } else if (finalRun.stopRequested) {
@@ -660,11 +794,26 @@ export async function domainScanWorkflow(config: RunConfig) {
 
     return { runId: workflowRunId };
   } catch (error) {
-    await finalizeRun(
+    const taggedError = formatWorkflowStageError(currentStage, error);
+    console.error("[domainScanWorkflow] failed", {
       workflowRunId,
-      "interrupted",
-      error instanceof Error ? error.message : "Unexpected workflow error.",
-    );
-    throw error;
+      stage: currentStage,
+      error: taggedError,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    try {
+      currentStage = "finalize-run";
+      await finalizeRun(workflowRunId, "interrupted", taggedError);
+    } catch (finalizeError) {
+      console.error("[domainScanWorkflow] failed to persist interrupted run", {
+        workflowRunId,
+        error: formatWorkflowStageError("finalize-run", finalizeError),
+      });
+    }
+
+    throw new Error(taggedError, {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 }

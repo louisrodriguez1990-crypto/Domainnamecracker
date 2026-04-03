@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Dashboard } from "@/components/dashboard";
@@ -80,6 +80,7 @@ const startedRun: RunSnapshot = {
 
 describe("dashboard", () => {
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 

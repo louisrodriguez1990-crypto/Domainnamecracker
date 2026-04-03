@@ -207,6 +207,26 @@ describe("availability providers", () => {
     expect(results.every((result) => result.retryAfterMs === 15_000)).toBe(true);
   });
 
+  it("turns thrown Name.com request failures into unknown results instead of throwing", async () => {
+    resetNameComEnv();
+    process.env.NAMECOM_API_USERNAME = "alice";
+    process.env.NAMECOM_API_TOKEN = "token-123";
+
+    const provider = createAvailabilityProvider({
+      fetchImpl: async () => {
+        throw new Error("socket hang up");
+      },
+    });
+
+    expect(isHybridAvailabilityProvider(provider)).toBe(true);
+
+    const [result] = await provider.screenDomains(["alpha.com"]);
+
+    expect(result.status).toBe("unknown");
+    expect(result.note).toContain("socket hang up");
+    expect(result.provider).toBe("namecom-core");
+  });
+
   it("surfaces Name.com 403 responses such as two-factor auth errors", async () => {
     resetNameComEnv();
     process.env.NAMECOM_API_USERNAME = "alice";
