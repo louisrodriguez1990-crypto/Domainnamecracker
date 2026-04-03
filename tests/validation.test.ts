@@ -5,7 +5,7 @@ import { runConfigSchema } from "@/lib/domain/validation";
 describe("run config validation", () => {
   it("accepts the retired random-short-com style and expands it", () => {
     const parsed = runConfigSchema.parse({
-      selectedTlds: ["com"],
+      selectedTlds: ["io", "ai"],
       enabledStyles: ["random-short-com"],
       wordSourceIds: [],
       targetHits: 25,

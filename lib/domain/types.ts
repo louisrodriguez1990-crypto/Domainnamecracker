@@ -18,12 +18,6 @@ const SOURCE_FREE_STYLES = new Set<GeneratedCandidateStyle>([
   "random-4-com",
   "random-5-com",
 ]);
-const COM_ONLY_STYLES = new Set<GeneratedCandidateStyle>([
-  "single-word-com",
-  "random-3-com",
-  "random-4-com",
-  "random-5-com",
-]);
 const LEGACY_STYLE_ALIASES: Record<string, GeneratedCandidateStyle[]> = {
   "random-short-com": ["random-3-com", "random-4-com", "random-5-com"],
 };
@@ -118,15 +112,6 @@ export function allowsSourceFreeRun(
   return Boolean(config.manualDomains?.length) ||
     (config.enabledStyles.length > 0 &&
       config.enabledStyles.every((style) => SOURCE_FREE_STYLES.has(style)));
-}
-
-export function requiresComOnlyStyles(
-  config: Pick<RunConfig, "enabledStyles">,
-) {
-  return (
-    config.enabledStyles.length > 0 &&
-    config.enabledStyles.every((style) => COM_ONLY_STYLES.has(style))
-  );
 }
 
 export type RunRecord = {

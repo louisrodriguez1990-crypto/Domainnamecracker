@@ -5,7 +5,6 @@ import {
   SUPPORTED_TLDS,
   allowsSourceFreeRun,
   expandLegacyEnabledStyles,
-  requiresComOnlyStyles,
 } from "@/lib/domain/types";
 
 const tldSchema = z.enum(SUPPORTED_TLDS);
@@ -30,14 +29,6 @@ export const runConfigSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["wordSourceIds"],
       message: "Select at least one word source before starting a scan.",
-    });
-  }
-
-  if (requiresComOnlyStyles(config) && !config.selectedTlds.includes("com")) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["selectedTlds"],
-      message: "Enable .com when you run single-word or pronounceable 3, 4, or 5 letter .com scans.",
     });
   }
 });

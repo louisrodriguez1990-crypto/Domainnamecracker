@@ -280,10 +280,6 @@ function buildRandomShortCandidates(
   style: keyof typeof RANDOM_SHORT_STYLE_CONFIG,
   scoreThreshold: number,
 ) {
-  if (!config.selectedTlds.includes("com")) {
-    return;
-  }
-
   const styleConfig = RANDOM_SHORT_STYLE_CONFIG[style];
   const randomStartCount = candidates.length;
   const targetCount = Math.min(
@@ -317,7 +313,7 @@ function buildRandomShortCandidates(
       [label],
       style,
       scoreThreshold,
-      ["com"],
+      config.selectedTlds,
       MAX_CANDIDATES,
     );
   }
@@ -441,10 +437,7 @@ export function buildCandidates(
     }
   }
 
-  if (
-    config.enabledStyles.includes("single-word-com") &&
-    config.selectedTlds.includes("com")
-  ) {
+  if (config.enabledStyles.includes("single-word-com")) {
     for (const word of standaloneWords) {
       addCandidate(
         candidates,
@@ -454,7 +447,7 @@ export function buildCandidates(
         [word],
         "single-word-com",
         exhaustiveStandalone ? 0 : scoreThreshold,
-        ["com"],
+        config.selectedTlds,
         MAX_STANDALONE_WORDS,
       );
     }

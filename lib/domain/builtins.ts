@@ -299,7 +299,7 @@ function createDictionaryDefinition(): BuiltinDefinition {
     name: "Dictionary Sweep",
     kind: "builtin",
     description:
-      "A full English word list for exhaustive single-word .com sweeps.",
+      "A full English word list for exhaustive single-word domain sweeps.",
     buckets: {
       ...LARGE_SOURCE_BUCKETS,
       general: getDictionaryWords(),

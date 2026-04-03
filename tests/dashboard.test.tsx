@@ -141,7 +141,7 @@ describe("dashboard", () => {
     );
   });
 
-  it("allows pronounceable 4-letter .com runs without any word source selected", async () => {
+  it("allows pronounceable 4-letter runs without any word source selected", async () => {
     const shortRun: RunSnapshot = {
       ...startedRun,
       run: {
@@ -174,7 +174,7 @@ describe("dashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /keyword compounds/i }));
     fireEvent.click(screen.getByRole("button", { name: /brandable mashups/i }));
-    fireEvent.click(screen.getByRole("button", { name: /pronounceable 4-letter \.com/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pronounceable 4-letter/i }));
     fireEvent.click(screen.getByRole("button", { name: /ai momentum/i }));
     fireEvent.click(screen.getByRole("button", { name: /start search/i }));
 

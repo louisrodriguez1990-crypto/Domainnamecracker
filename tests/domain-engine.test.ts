@@ -43,7 +43,7 @@ describe("domain generator", () => {
     );
   });
 
-  it("can generate standalone .com candidates without adding other tlds", () => {
+  it("can generate standalone candidates across every selected tld", () => {
     const candidates = buildCandidates(
       {
         selectedTlds: ["com", "io"],
@@ -61,12 +61,14 @@ describe("domain generator", () => {
     expect(
       candidates.every(
         (candidate) =>
-          candidate.fullDomains.length === 1 && candidate.fullDomains[0]?.endsWith(".com"),
+          candidate.fullDomains.length === 2 &&
+          candidate.fullDomains.some((domain) => domain.endsWith(".com")) &&
+          candidate.fullDomains.some((domain) => domain.endsWith(".io")),
       ),
     ).toBe(true);
   });
 
-  it("builds separate pronounceable 3, 4, and 5 letter .com candidate sets", () => {
+  it("builds separate pronounceable 3, 4, and 5 letter candidate sets across selected tlds", () => {
     const styleExpectations = [
       { style: "random-3-com" as const, length: 3 },
       { style: "random-4-com" as const, length: 4 },
@@ -76,7 +78,7 @@ describe("domain generator", () => {
     for (const { style, length } of styleExpectations) {
       const candidates = buildCandidates(
         {
-          selectedTlds: ["com"],
+          selectedTlds: ["com", "io", "ai"],
           enabledStyles: [style],
           wordSourceIds: [],
           targetHits: 25,
@@ -90,8 +92,10 @@ describe("domain generator", () => {
       expect(
         candidates.every(
           (candidate) =>
-            candidate.fullDomains.length === 1 &&
-            candidate.fullDomains[0]?.endsWith(".com") &&
+            candidate.fullDomains.length === 3 &&
+            candidate.fullDomains.some((domain) => domain.endsWith(".com")) &&
+            candidate.fullDomains.some((domain) => domain.endsWith(".io")) &&
+            candidate.fullDomains.some((domain) => domain.endsWith(".ai")) &&
             candidate.label.length === length &&
             /[aeiou]/.test(candidate.label),
         ),
@@ -112,7 +116,7 @@ describe("domain generator", () => {
     expect(dictionarySource?.buckets.general).toEqual([]);
   });
 
-  it("treats dictionary-backed single-word .com scans as exhaustive", () => {
+  it("treats dictionary-backed single-word scans as exhaustive across selected tlds", () => {
     const dictionarySource: WordSource = {
       id: DICTIONARY_SOURCE_ID,
       name: "Dictionary Sweep",
@@ -133,7 +137,7 @@ describe("domain generator", () => {
 
     const candidates = buildCandidates(
       {
-        selectedTlds: ["com"],
+        selectedTlds: ["com", "io", "ai"],
         enabledStyles: ["single-word-com"],
         wordSourceIds: [DICTIONARY_SOURCE_ID],
         targetHits: 25,
@@ -147,7 +151,13 @@ describe("domain generator", () => {
       true,
     );
     expect(
-      candidates.every((candidate) => candidate.fullDomains[0]?.endsWith(".com")),
+      candidates.every(
+        (candidate) =>
+          candidate.fullDomains.length === 3 &&
+          candidate.fullDomains.some((domain) => domain.endsWith(".com")) &&
+          candidate.fullDomains.some((domain) => domain.endsWith(".io")) &&
+          candidate.fullDomains.some((domain) => domain.endsWith(".ai")),
+      ),
     ).toBe(true);
   });
 });
