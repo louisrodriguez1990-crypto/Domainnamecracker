@@ -15,6 +15,7 @@ The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POO
 - Includes a dictionary-backed source for exhaustive single-word sweeps across your selected TLDs
 - Scores candidates before they hit the availability worker
 - Prefers Name.com when configured, otherwise falls back to an external checker or RDAP
+- Shows provider status in the dashboard and lets you disable Name.com per run when credentials are present
 - Stores word sources, runs, and check results so later scans can skip repeats
 - Lets you stop runs, export hits, and manually recheck domains from the UI
 

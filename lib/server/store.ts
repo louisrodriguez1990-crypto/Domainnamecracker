@@ -85,6 +85,7 @@ function mapRun(row: RunRow): RunRecord {
     wordSourceIds: parseJson<string[]>(row.wordSourceIds, []),
     targetHits: row.targetHits,
     concurrency: row.concurrency,
+    preferNameCom: Boolean(row.preferNameCom),
     scoreThreshold: row.scoreThreshold,
     generatedCount: row.generatedCount,
     checkedCount: row.checkedCount,
@@ -177,6 +178,7 @@ export class DomainHunterStore {
         word_source_ids TEXT NOT NULL,
         target_hits INTEGER NOT NULL,
         concurrency INTEGER NOT NULL,
+        prefer_namecom INTEGER NOT NULL DEFAULT 1,
         score_threshold REAL,
         generated_count INTEGER NOT NULL DEFAULT 0,
         checked_count INTEGER NOT NULL DEFAULT 0,
@@ -246,7 +248,21 @@ export class DomainHunterStore {
     `);
 
     this.ensureCheckedDomainColumns();
+    this.ensureRunColumns();
     this.markInterruptedRuns();
+  }
+
+  private ensureRunColumns() {
+    const columns = this.sqlite
+      .prepare<[], { name: string }>("pragma table_info(runs)")
+      .all()
+      .map((column) => column.name);
+
+    if (!columns.includes("prefer_namecom")) {
+      this.sqlite.exec(
+        "ALTER TABLE runs ADD COLUMN prefer_namecom INTEGER NOT NULL DEFAULT 1",
+      );
+    }
   }
 
   private ensureCheckedDomainColumns() {
@@ -370,6 +386,7 @@ export class DomainHunterStore {
         wordSourceIds: JSON.stringify(config.wordSourceIds),
         targetHits: config.targetHits,
         concurrency: config.concurrency,
+        preferNameCom: config.preferNameCom === false ? 0 : 1,
         scoreThreshold: config.scoreThreshold ?? null,
         generatedCount,
         checkedCount: 0,

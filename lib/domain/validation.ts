@@ -20,6 +20,7 @@ export const runConfigSchema = z.object({
   wordSourceIds: z.array(z.string().min(1)).max(64),
   targetHits: z.number().int().min(1).max(100).default(25),
   concurrency: z.number().int().min(1).max(2).default(2),
+  preferNameCom: z.boolean().default(true),
   scoreThreshold: z.number().min(0).max(100).optional(),
   manualDomains: z.array(z.string().min(1)).max(50).optional(),
   recheckExisting: z.boolean().optional(),

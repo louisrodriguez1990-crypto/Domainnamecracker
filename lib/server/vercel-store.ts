@@ -41,6 +41,7 @@ type RunRow = {
   word_source_ids: string[];
   target_hits: number;
   concurrency: number;
+  prefer_namecom: boolean;
   score_threshold: number | null;
   generated_count: number;
   checked_count: number;
@@ -124,6 +125,7 @@ function mapRun(row: RunRow): RunRecord {
     wordSourceIds: row.word_source_ids,
     targetHits: row.target_hits,
     concurrency: row.concurrency,
+    preferNameCom: row.prefer_namecom,
     scoreThreshold: row.score_threshold,
     generatedCount: row.generated_count,
     checkedCount: row.checked_count,
@@ -202,6 +204,7 @@ export class VercelStore {
         word_source_ids jsonb not null,
         target_hits integer not null,
         concurrency integer not null,
+        prefer_namecom boolean not null default true,
         score_threshold double precision null,
         generated_count integer not null default 0,
         checked_count integer not null default 0,
@@ -215,6 +218,11 @@ export class VercelStore {
         updated_at timestamptz not null,
         finished_at timestamptz null
       );
+    `;
+
+    await this.sql`
+      alter table runs
+      add column if not exists prefer_namecom boolean not null default true
     `;
 
     await this.sql`
@@ -366,7 +374,7 @@ export class VercelStore {
     await this.sql`
       insert into runs (
         id, status, selected_tlds, enabled_styles, word_source_ids, target_hits,
-        concurrency, score_threshold, generated_count, checked_count, skipped_count,
+        concurrency, prefer_namecom, score_threshold, generated_count, checked_count, skipped_count,
         available_count, current_candidate, last_error, stop_requested, manual_domains,
         started_at, updated_at, finished_at
       )
@@ -378,6 +386,7 @@ export class VercelStore {
         ${this.sql.json(config.wordSourceIds)},
         ${config.targetHits},
         ${config.concurrency},
+        ${config.preferNameCom ?? true},
         ${config.scoreThreshold ?? null},
         ${generatedCount},
         0,
@@ -398,6 +407,7 @@ export class VercelStore {
         word_source_ids = excluded.word_source_ids,
         target_hits = excluded.target_hits,
         concurrency = excluded.concurrency,
+        prefer_namecom = excluded.prefer_namecom,
         score_threshold = excluded.score_threshold,
         generated_count = greatest(runs.generated_count, excluded.generated_count),
         updated_at = excluded.updated_at

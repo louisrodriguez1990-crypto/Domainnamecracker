@@ -21,6 +21,7 @@ export const runsTable = sqliteTable(
     wordSourceIds: text("word_source_ids").notNull(),
     targetHits: integer("target_hits").notNull(),
     concurrency: integer("concurrency").notNull(),
+    preferNameCom: integer("prefer_namecom").notNull().default(1),
     scoreThreshold: real("score_threshold"),
     generatedCount: integer("generated_count").notNull().default(0),
     checkedCount: integer("checked_count").notNull().default(0),

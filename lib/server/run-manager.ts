@@ -69,17 +69,24 @@ function toUnknownResult(
 
 export class RunManager {
   private readonly store: DomainHunterStore;
-  private readonly provider: AvailabilityProvider;
+  private readonly providerFactory: (config: RunConfig) => AvailabilityProvider;
   private readonly sleeper: typeof sleep;
   private readonly activeRuns = new Map<string, ActiveRun>();
 
   constructor(options?: {
     store?: DomainHunterStore;
     provider?: AvailabilityProvider;
+    providerFactory?: (config: RunConfig) => AvailabilityProvider;
     sleeper?: typeof sleep;
   }) {
     this.store = options?.store ?? new DomainHunterStore();
-    this.provider = options?.provider ?? createAvailabilityProvider();
+    this.providerFactory = options?.providerFactory ??
+      (options?.provider
+        ? (() => options.provider!)
+        : ((config) =>
+            createAvailabilityProvider({
+              preferNameCom: config.preferNameCom ?? true,
+            })));
     this.sleeper = options?.sleeper ?? sleep;
   }
 
@@ -161,13 +168,14 @@ export class RunManager {
   private async processRun(runId: string, config: RunConfig, candidates: Candidate[]) {
     const activeRun = this.activeRuns.get(runId);
     const pacing = getScanPacing(config);
+    const provider = this.providerFactory(config);
 
     if (!activeRun) {
       return;
     }
 
-    const hybridProvider = isHybridAvailabilityProvider(this.provider)
-      ? this.provider
+    const hybridProvider = isHybridAvailabilityProvider(provider)
+      ? provider
       : null;
 
     if (hybridProvider && (!config.manualDomains || config.manualDomains.length === 0)) {
@@ -270,7 +278,7 @@ export class RunManager {
           return;
         }
 
-        const result = await this.processTask(runId, task, config, pacing);
+        const result = await this.processTask(runId, task, config, pacing, provider);
         handleRateLimitHint(result);
 
         if (result) {
@@ -569,6 +577,7 @@ export class RunManager {
     task: RunTask,
     config: RunConfig,
     pacing: ReturnType<typeof getScanPacing>,
+    provider: AvailabilityProvider,
   ) {
     if (!config.recheckExisting && !task.manual && this.store.getCheckedDomain(task.domain)) {
       this.store.incrementSkipped(runId, task.domain);
@@ -576,7 +585,7 @@ export class RunManager {
     }
 
     this.store.setCurrentCandidate(runId, task.domain);
-    const result = await this.checkWithRetries(task.domain, pacing);
+    const result = await this.checkWithRetries(task.domain, pacing, provider);
 
     this.store.recordCheckResult({
       runId,
@@ -602,8 +611,9 @@ export class RunManager {
   private async checkWithRetries(
     domain: string,
     pacing: ReturnType<typeof getScanPacing>,
+    provider: AvailabilityProvider,
   ) {
-    const providerName = this.provider.name;
+    const providerName = provider.name;
     let lastUnknown = toUnknownResult(
       domain,
       "Availability check did not produce a stable result.",
@@ -612,7 +622,7 @@ export class RunManager {
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const result = await this.provider.checkDomain(domain);
+        const result = await provider.checkDomain(domain);
 
         if (getRetryAfterMs(result) || result.status !== "unknown" || attempt === 2) {
           return result;

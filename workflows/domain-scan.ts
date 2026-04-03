@@ -108,10 +108,11 @@ async function setCurrentCandidate(runId: string, domain: string) {
 async function checkWithRetries(
   domain: string,
   pacing: ReturnType<typeof getScanPacing>,
+  preferNameCom = true,
 ) {
   "use step";
 
-  const provider = createAvailabilityProvider();
+  const provider = createAvailabilityProvider({ preferNameCom });
   const providerName = provider.name;
   let lastUnknown = toUnknownResult(
     domain,
@@ -156,7 +157,7 @@ async function checkWithRetries(
 async function screenDomainsBatch(domains: string[]) {
   "use step";
 
-  const provider = createAvailabilityProvider();
+  const provider = createAvailabilityProvider({ preferNameCom: true });
 
   if (!isHybridAvailabilityProvider(provider)) {
     throw new Error("Batch screening requires a hybrid availability provider.");
@@ -168,7 +169,7 @@ async function screenDomainsBatch(domains: string[]) {
 async function checkDomainsBatch(domains: string[]) {
   "use step";
 
-  const provider = createAvailabilityProvider();
+  const provider = createAvailabilityProvider({ preferNameCom: true });
 
   return checkDomainsWithProvider(provider, domains);
 }
@@ -206,6 +207,7 @@ async function processBatch(
   tasks: ScanTask[],
   pacing: ReturnType<typeof getScanPacing>,
   recheckExisting = false,
+  preferNameCom = true,
 ) {
   "use step";
 
@@ -228,7 +230,7 @@ async function processBatch(
     }
 
     await store.setCurrentCandidate(runId, task.domain);
-    const result = await checkWithRetries(task.domain, pacing);
+    const result = await checkWithRetries(task.domain, pacing, preferNameCom);
 
     await store.recordCheckResult({
       runId,
@@ -289,7 +291,9 @@ export async function domainScanWorkflow(config: RunConfig) {
     await updateGeneratedCount(workflowRunId, candidates.length);
 
     const pacing = getScanPacing(config);
-    const provider = createAvailabilityProvider();
+    const provider = createAvailabilityProvider({
+      preferNameCom: config.preferNameCom ?? true,
+    });
 
     if (
       isHybridAvailabilityProvider(provider) &&
@@ -573,6 +577,7 @@ export async function domainScanWorkflow(config: RunConfig) {
         batch,
         pacing,
         config.recheckExisting ?? false,
+        config.preferNameCom ?? true,
       );
 
       if (outcome.shouldStop) {

@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
+  type AvailabilityProviderStatus,
   DICTIONARY_SOURCE_ID,
   allowsSourceFreeRun,
   coerceEnabledStyles,
@@ -65,7 +66,18 @@ function exportCsv(rows: string[][]) {
   URL.revokeObjectURL(href);
 }
 
-export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: RunSnapshot | null; setupMessage?: string | null }) {
+function providerLabel(provider: AvailabilityProviderStatus["defaultProvider"] | AvailabilityProviderStatus["fallbackProvider"]) {
+  if (provider === "namecom") return "Name.com";
+  if (provider === "external") return "External checker";
+  return "RDAP fallback";
+}
+
+export function Dashboard(props: {
+  initialHistory: HistoryPayload;
+  initialRun: RunSnapshot | null;
+  setupMessage?: string | null;
+  providerStatus: AvailabilityProviderStatus;
+}) {
   const [history, setHistory] = useState(props.initialHistory);
   const [currentRun, setCurrentRun] = useState(props.initialRun);
   const [selectedTlds, setSelectedTlds] = useState<SupportedTld[]>(
@@ -87,6 +99,9 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
           .map((source) => source.id),
   );
   const [targetHits, setTargetHits] = useState(props.initialRun?.run.targetHits ?? 25);
+  const [preferNameCom, setPreferNameCom] = useState(
+    props.initialRun?.run.preferNameCom ?? props.providerStatus.nameComConfigured,
+  );
   const [scoreThreshold, setScoreThreshold] = useState(props.initialRun?.run.scoreThreshold ?? 58);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -100,6 +115,14 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
   const builtinSources = history.wordSources.filter((source) => source.kind === "builtin");
   const uploadedSources = history.wordSources.filter((source) => source.kind === "upload");
   const hitFeed = currentRun?.topHits.length ? currentRun.topHits : history.recentHits.slice(0, 12);
+  const selectedProviderLabel = preferNameCom && props.providerStatus.nameComConfigured
+    ? "Name.com"
+    : providerLabel(props.providerStatus.fallbackProvider);
+  const providerStatusMessage = preferNameCom && props.providerStatus.nameComConfigured
+    ? "High-volume Name.com screening and live confirmation will run for this scan."
+    : props.providerStatus.nameComConfigured
+      ? `This scan will skip Name.com and use ${providerLabel(props.providerStatus.fallbackProvider)} instead.`
+      : props.providerStatus.nameComSetupMessage ?? "Name.com is not configured, so fallback checks will be used.";
 
   async function refreshHistory() {
     const response = await fetch("/api/history", { cache: "no-store" });
@@ -150,6 +173,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
         wordSourceIds: selectedSources,
         targetHits,
         concurrency: 2,
+        preferNameCom,
         scoreThreshold,
       })) as RunSnapshot;
       startTransition(() => setCurrentRun(payload));
@@ -216,6 +240,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
         wordSourceIds: selectedSources.length ? selectedSources : builtinSources.map((source) => source.id),
         targetHits: 1,
         concurrency: 1,
+        preferNameCom,
         scoreThreshold: 0,
         manualDomains: [domain],
         recheckExisting: true,
@@ -249,7 +274,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
               <div className="flex flex-wrap gap-3 text-sm text-stone-800">
                 <span className="rounded-full border border-amber-200 bg-amber-100 px-4 py-2">Pure code generation</span>
                 <span className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2">Persistent history and dedupe</span>
-                <span className="rounded-full border border-stone-300 bg-white/75 px-4 py-2">Best-effort RDAP checks</span>
+                <span className="rounded-full border border-stone-300 bg-white/75 px-4 py-2">{props.providerStatus.nameComConfigured ? "Name.com ready" : "Fallback checker active"}</span>
               </div>
             </div>
             <div className="rounded-[32px] border border-white/50 bg-[color:var(--panel-strong)] p-6">
@@ -308,6 +333,59 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 <p className="text-sm font-semibold text-stone-900">Word sources</p>
                 <div className="mt-3 grid gap-3">
                   {[...builtinSources, ...uploadedSources].map((source) => <button key={source.id} type="button" disabled={setupLocked || Boolean(activeRun)} onClick={() => setSelectedSources((current) => toggleValue(current, source.id))} className={cn("rounded-[24px] border p-4 text-left transition", selectedSources.includes(source.id) ? "border-[color:var(--teal)] bg-teal-50 text-stone-900" : "border-stone-200 bg-white/70 text-stone-800", (activeRun || setupLocked) && "cursor-not-allowed opacity-60")}><div className="flex items-center justify-between gap-3"><p className="font-medium">{source.name}</p><span className="rounded-full border border-stone-200 bg-white px-3 py-1 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.kind}</span></div><p className="mt-2 text-sm leading-6 text-stone-600">{source.description}</p><p className="mt-3 font-mono text-xs uppercase tracking-[0.2em] text-stone-500">{source.wordCount.toLocaleString("en-US")} words</p></button>)}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-stone-900">Availability provider</p>
+                <div className="mt-3 rounded-[24px] border border-stone-200 bg-white/75 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-stone-900">{selectedProviderLabel}</p>
+                      <p className="mt-2 text-sm leading-6 text-stone-600">{providerStatusMessage}</p>
+                    </div>
+                    <span className={cn(
+                      "rounded-full border px-3 py-1 text-xs uppercase tracking-[0.18em]",
+                      props.providerStatus.nameComConfigured
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : "border-amber-200 bg-amber-50 text-amber-900",
+                    )}>
+                      {props.providerStatus.nameComConfigured ? "ready" : "not configured"}
+                    </span>
+                  </div>
+                  <label className="mt-4 flex items-center justify-between gap-4 rounded-[20px] border border-stone-200 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-stone-900">Use Name.com when available</p>
+                      <p className="mt-1 text-sm leading-6 text-stone-600">
+                        {props.providerStatus.nameComConfigured
+                          ? `Turn this off to force ${providerLabel(props.providerStatus.fallbackProvider)} for this run.`
+                          : props.providerStatus.nameComSetupMessage ?? "Add Name.com credentials to unlock batch screening."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={preferNameCom}
+                      aria-label="Use Name.com when available"
+                      disabled={setupLocked || Boolean(activeRun) || !props.providerStatus.nameComConfigured}
+                      onClick={() => setPreferNameCom((current) => !current)}
+                      className={cn(
+                        "relative inline-flex h-7 w-12 items-center rounded-full transition",
+                        preferNameCom && props.providerStatus.nameComConfigured
+                          ? "bg-stone-900"
+                          : "bg-stone-300",
+                        (activeRun || setupLocked || !props.providerStatus.nameComConfigured) && "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-5 w-5 rounded-full bg-white transition",
+                          preferNameCom && props.providerStatus.nameComConfigured
+                            ? "translate-x-6"
+                            : "translate-x-1",
+                        )}
+                      />
+                    </button>
+                  </label>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">

@@ -30,6 +30,7 @@ export type RunStatus =
 export type AvailabilityStatus = "available" | "taken" | "unknown";
 export type AvailabilityStage = "preliminary" | "definitive";
 export type WordSourceKind = "builtin" | "upload";
+export type AvailabilityProviderKey = "namecom" | "external" | "rdap";
 
 export type WordBuckets = {
   adjectives: string[];
@@ -77,9 +78,18 @@ export type RunConfig = {
   wordSourceIds: string[];
   targetHits: number;
   concurrency: number;
+  preferNameCom?: boolean;
   scoreThreshold?: number;
   manualDomains?: string[];
   recheckExisting?: boolean;
+};
+
+export type AvailabilityProviderStatus = {
+  nameComConfigured: boolean;
+  nameComSetupMessage: string | null;
+  externalCheckerConfigured: boolean;
+  defaultProvider: AvailabilityProviderKey;
+  fallbackProvider: Exclude<AvailabilityProviderKey, "namecom">;
 };
 
 export function expandLegacyEnabledStyles(styles: readonly string[]) {
@@ -125,6 +135,7 @@ export type RunRecord = {
   wordSourceIds: string[];
   targetHits: number;
   concurrency: number;
+  preferNameCom: boolean;
   scoreThreshold: number | null;
   generatedCount: number;
   checkedCount: number;

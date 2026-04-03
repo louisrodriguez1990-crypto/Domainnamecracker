@@ -6,6 +6,7 @@ import {
   classifyRdapPayload,
   createAvailabilityProvider,
   createNameComAuthorizationHeader,
+  getAvailabilityProviderStatus,
   isHybridAvailabilityProvider,
   parseRetryAfterHeader,
 } from "@/lib/domain/availability";
@@ -131,6 +132,52 @@ describe("availability providers", () => {
 
     expect(result.provider).toBe("namecom-core");
     expect(result.status).toBe("available");
+  });
+
+  it("lets callers opt out of Name.com even when credentials are configured", async () => {
+    resetNameComEnv();
+    process.env.NAMECOM_API_USERNAME = "alice";
+    process.env.NAMECOM_API_TOKEN = "token-123";
+    process.env.DOMAIN_CHECK_HTTP_URL = "https://example.com/check";
+
+    const provider = createAvailabilityProvider({
+      preferNameCom: false,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            status: "taken",
+            provider: "external-registrar",
+            checkedAt: "2026-04-03T12:00:00.000Z",
+            confidence: 0.8,
+            note: "external result",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    });
+
+    expect(isHybridAvailabilityProvider(provider)).toBe(false);
+
+    const result = await provider.checkDomain("alpha.com");
+
+    expect(result.provider).toBe("external-registrar");
+    expect(result.note).toBe("external result");
+  });
+
+  it("reports provider setup status for the dashboard", () => {
+    resetNameComEnv();
+    process.env.NAMECOM_API_USERNAME = "alice";
+    process.env.NAMECOM_API_TOKEN = "token-123";
+
+    expect(getAvailabilityProviderStatus()).toEqual({
+      nameComConfigured: true,
+      nameComSetupMessage: null,
+      externalCheckerConfigured: false,
+      defaultProvider: "namecom",
+      fallbackProvider: "rdap",
+    });
   });
 
   it("returns retry hints for Name.com 429 responses", async () => {

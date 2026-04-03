@@ -4,7 +4,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Dashboard } from "@/components/dashboard";
-import type { HistoryPayload, RunSnapshot } from "@/lib/domain/types";
+import type {
+  AvailabilityProviderStatus,
+  HistoryPayload,
+  RunSnapshot,
+} from "@/lib/domain/types";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -39,6 +43,14 @@ const baseHistory: HistoryPayload = {
   recentHits: [],
 };
 
+const baseProviderStatus: AvailabilityProviderStatus = {
+  nameComConfigured: true,
+  nameComSetupMessage: null,
+  externalCheckerConfigured: false,
+  defaultProvider: "namecom",
+  fallbackProvider: "rdap",
+};
+
 const startedRun: RunSnapshot = {
   run: {
     id: "run-1",
@@ -48,6 +60,7 @@ const startedRun: RunSnapshot = {
     wordSourceIds: ["builtin-ai", "upload-1"],
     targetHits: 25,
     concurrency: 2,
+    preferNameCom: true,
     scoreThreshold: 58,
     generatedCount: 320,
     checkedCount: 0,
@@ -109,7 +122,11 @@ describe("dashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { container } = render(
-      <Dashboard initialHistory={baseHistory} initialRun={null} />,
+      <Dashboard
+        initialHistory={baseHistory}
+        initialRun={null}
+        providerStatus={baseProviderStatus}
+      />,
     );
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -170,7 +187,13 @@ describe("dashboard", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Dashboard initialHistory={baseHistory} initialRun={null} />);
+    render(
+      <Dashboard
+        initialHistory={baseHistory}
+        initialRun={null}
+        providerStatus={baseProviderStatus}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /keyword compounds/i }));
     fireEvent.click(screen.getByRole("button", { name: /brandable mashups/i }));
@@ -196,6 +219,7 @@ describe("dashboard", () => {
           wordSourceIds: [],
           targetHits: 25,
           concurrency: 2,
+          preferNameCom: true,
           scoreThreshold: 58,
         }),
       }),
@@ -241,6 +265,7 @@ describe("dashboard", () => {
             enabledStyles: ["random-short-com" as never],
           },
         }}
+        providerStatus={baseProviderStatus}
       />,
     );
 
@@ -262,6 +287,65 @@ describe("dashboard", () => {
           wordSourceIds: [],
           targetHits: 25,
           concurrency: 2,
+          preferNameCom: true,
+          scoreThreshold: 58,
+        }),
+      }),
+    );
+  });
+
+  it("lets you disable Name.com per run when credentials are configured", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/runs") {
+        return jsonResponse(startedRun, 201);
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse(baseHistory);
+      }
+
+      if (url === "/api/runs/run-1") {
+        return jsonResponse({
+          ...startedRun,
+          run: { ...startedRun.run, status: "completed" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <Dashboard
+        initialHistory={baseHistory}
+        initialRun={null}
+        providerStatus={baseProviderStatus}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("switch", { name: /use name\.com when available/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start search/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Scan started\. The worker is cycling through fresh candidates\./i)).toBeInTheDocument(),
+    );
+
+    const runRequest = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/runs",
+    );
+
+    expect(runRequest?.[1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          selectedTlds: ["com", "io", "ai"],
+          enabledStyles: ["keyword", "brandable"],
+          wordSourceIds: ["builtin-ai"],
+          targetHits: 25,
+          concurrency: 2,
+          preferNameCom: false,
           scoreThreshold: 58,
         }),
       }),

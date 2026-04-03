@@ -1,4 +1,7 @@
-import type { AvailabilityResult } from "@/lib/domain/types";
+import type {
+  AvailabilityProviderStatus,
+  AvailabilityResult,
+} from "@/lib/domain/types";
 
 type FetchLike = typeof fetch;
 type RdapBootstrap = {
@@ -7,6 +10,7 @@ type RdapBootstrap = {
 
 type ProviderFactoryOptions = {
   fetchImpl?: FetchLike;
+  preferNameCom?: boolean;
 };
 
 type RdapClassification = Omit<AvailabilityResult, "domain" | "checkedAt" | "provider">;
@@ -224,6 +228,49 @@ function mapByDomain<T extends { domainName?: string }>(items: T[] | undefined) 
 
 export function createNameComAuthorizationHeader(username: string, token: string) {
   return `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
+}
+
+export function hasNameComCredentials() {
+  return Boolean(
+    process.env.NAMECOM_API_USERNAME?.trim() &&
+      process.env.NAMECOM_API_TOKEN?.trim(),
+  );
+}
+
+export function getNameComSetupMessage() {
+  const username = process.env.NAMECOM_API_USERNAME?.trim();
+  const token = process.env.NAMECOM_API_TOKEN?.trim();
+
+  if (username && token) {
+    return null;
+  }
+
+  if (username || token) {
+    return "Set both NAMECOM_API_USERNAME and NAMECOM_API_TOKEN to enable Name.com batch checks.";
+  }
+
+  return "Name.com batch checks are off until NAMECOM_API_USERNAME and NAMECOM_API_TOKEN are configured.";
+}
+
+export function hasExternalChecker() {
+  return Boolean(process.env.DOMAIN_CHECK_HTTP_URL);
+}
+
+export function getAvailabilityProviderStatus(): AvailabilityProviderStatus {
+  const nameComConfigured = hasNameComCredentials();
+  const externalCheckerConfigured = hasExternalChecker();
+
+  return {
+    nameComConfigured,
+    nameComSetupMessage: getNameComSetupMessage(),
+    externalCheckerConfigured,
+    defaultProvider: nameComConfigured
+      ? "namecom"
+      : externalCheckerConfigured
+        ? "external"
+        : "rdap",
+    fallbackProvider: externalCheckerConfigured ? "external" : "rdap",
+  };
 }
 
 export function classifyNameComZonePayload(
@@ -765,8 +812,9 @@ export function createAvailabilityProvider(
   const fetchImpl = options.fetchImpl ?? fetch;
   const nameComUsername = process.env.NAMECOM_API_USERNAME?.trim();
   const nameComToken = process.env.NAMECOM_API_TOKEN?.trim();
+  const preferNameCom = options.preferNameCom ?? true;
 
-  if (nameComUsername && nameComToken) {
+  if (preferNameCom && nameComUsername && nameComToken) {
     return new NameComProvider({
       fetchImpl,
       username: nameComUsername,

@@ -3,9 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { HistoryPayload } from "@/lib/domain/types";
 import { getDashboardData } from "@/lib/server/dashboard-data";
 import { getDomainService } from "@/lib/server/domain-service";
+import { getAvailabilityProviderStatus } from "@/lib/domain/availability";
 
 vi.mock("@/lib/server/domain-service", () => ({
   getDomainService: vi.fn(),
+}));
+
+vi.mock("@/lib/domain/availability", () => ({
+  getAvailabilityProviderStatus: vi.fn(),
 }));
 
 const historyPayload: HistoryPayload = {
@@ -37,6 +42,13 @@ describe("getDashboardData", () => {
     };
 
     vi.mocked(getDomainService).mockReturnValue(service);
+    vi.mocked(getAvailabilityProviderStatus).mockReturnValue({
+      nameComConfigured: false,
+      nameComSetupMessage: "missing",
+      externalCheckerConfigured: false,
+      defaultProvider: "rdap",
+      fallbackProvider: "rdap",
+    });
 
     const dashboardPromise = getDashboardData();
     await Promise.resolve();
@@ -53,6 +65,13 @@ describe("getDashboardData", () => {
       history: historyPayload,
       currentRun: null,
       setupMessage: null,
+      providerStatus: {
+        nameComConfigured: false,
+        nameComSetupMessage: "missing",
+        externalCheckerConfigured: false,
+        defaultProvider: "rdap",
+        fallbackProvider: "rdap",
+      },
     });
   });
 });
