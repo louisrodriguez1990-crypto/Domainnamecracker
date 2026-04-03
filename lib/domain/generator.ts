@@ -20,7 +20,22 @@ type CandidatePools = {
 const MAX_POOL_SIZE = 72;
 const MAX_STANDALONE_WORDS = 300000;
 const MAX_CANDIDATES = 18000;
+const MAX_RANDOM_SHORT_CANDIDATES = 6000;
 const VOWELS = new Set(["a", "e", "i", "o", "u"]);
+const WEIGHTED_VOWELS = "aaaaaeeeeiiiooouu";
+const WEIGHTED_CONSONANTS = "bbbccddffgghhklllmmmnnnppprrrssstttvvwyyzz";
+const RANDOM_SHORT_PATTERNS = [
+  "cvc",
+  "vcv",
+  "cvcv",
+  "cvvc",
+  "vcvc",
+  "cvcc",
+  "cvcvc",
+  "cvccv",
+  "vcvcv",
+  "cvcvv",
+] as const;
 const VALUE_TERMS = new Set([
   "ai",
   "agent",
@@ -117,7 +132,7 @@ function vowelRatio(value: string): number {
 }
 
 export function scoreCandidate(label: string, sourceWords: string[]): number {
-  if (label.length < 4 || label.length > 14) {
+  if (label.length < 3 || label.length > 14) {
     return 0;
   }
 
@@ -128,11 +143,18 @@ export function scoreCandidate(label: string, sourceWords: string[]): number {
 
   if (label.length >= 5 && label.length <= 12) {
     score += 16;
+  } else if (label.length === 4) {
+    score += 12;
+  } else if (label.length === 3) {
+    score += 8;
   } else {
     score -= 8;
   }
 
-  if (ratio >= 0.28 && ratio <= 0.62) {
+  const minimumRatio = label.length === 3 ? 0.2 : 0.28;
+  const maximumRatio = label.length === 3 ? 0.8 : 0.62;
+
+  if (ratio >= minimumRatio && ratio <= maximumRatio) {
     score += 12;
   } else {
     score -= 10;
@@ -221,6 +243,30 @@ function leftBlend(word: string): string {
 
 function rightBlend(word: string): string {
   return word.slice(Math.max(1, Math.floor(word.length / 2)));
+}
+
+function pickWeightedLetter(pool: string): string {
+  return pool[Math.floor(Math.random() * pool.length)] ?? "a";
+}
+
+function buildPronounceableShortLabel(pattern: (typeof RANDOM_SHORT_PATTERNS)[number]) {
+  let label = "";
+
+  for (const slot of pattern) {
+    label += slot === "v"
+      ? pickWeightedLetter(WEIGHTED_VOWELS)
+      : pickWeightedLetter(WEIGHTED_CONSONANTS);
+  }
+
+  if (/q/.test(label) && !/qu/.test(label)) {
+    return null;
+  }
+
+  if (/(.)\1\1/.test(label)) {
+    return null;
+  }
+
+  return label;
 }
 
 export function buildCandidates(
@@ -356,6 +402,48 @@ export function buildCandidates(
         exhaustiveStandalone ? 0 : scoreThreshold,
         ["com"],
         MAX_STANDALONE_WORDS,
+      );
+    }
+  }
+
+  if (
+    config.enabledStyles.includes("random-short-com") &&
+    config.selectedTlds.includes("com")
+  ) {
+    const randomStartCount = candidates.length;
+    const targetCount = Math.min(
+      MAX_RANDOM_SHORT_CANDIDATES,
+      Math.max(config.targetHits * 160, 900),
+    );
+    const maxAttempts = targetCount * 10;
+    let attempts = 0;
+
+    while (
+      candidates.length - randomStartCount < targetCount &&
+      attempts < maxAttempts
+    ) {
+      const pattern =
+        RANDOM_SHORT_PATTERNS[
+          Math.floor(Math.random() * RANDOM_SHORT_PATTERNS.length)
+        ];
+      const label = pattern ? buildPronounceableShortLabel(pattern) : null;
+
+      attempts += 1;
+
+      if (!label) {
+        continue;
+      }
+
+      addCandidate(
+        candidates,
+        seenLabels,
+        config.selectedTlds,
+        label,
+        [label],
+        "random-short-com",
+        scoreThreshold,
+        ["com"],
+        MAX_CANDIDATES,
       );
     }
   }

@@ -140,4 +140,65 @@ describe("dashboard", () => {
       }),
     );
   });
+
+  it("allows pronounceable short .com runs without any word source selected", async () => {
+    const shortRun: RunSnapshot = {
+      ...startedRun,
+      run: {
+        ...startedRun.run,
+        id: "run-short",
+        status: "completed",
+        enabledStyles: ["random-short-com"],
+        wordSourceIds: [],
+        selectedTlds: ["com"],
+      },
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/runs") {
+        return jsonResponse(shortRun, 201);
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse(baseHistory);
+      }
+
+      throw new Error(`Unexpected fetch call to ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Dashboard initialHistory={baseHistory} initialRun={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /keyword compounds/i }));
+    fireEvent.click(screen.getByRole("button", { name: /brandable mashups/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pronounceable short \.com/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ai momentum/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start search/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Scan started\. The worker is cycling through fresh candidates\./i)).toBeInTheDocument(),
+    );
+
+    const runRequest = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/runs",
+    );
+
+    expect(runRequest).toBeTruthy();
+    expect(runRequest?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          selectedTlds: ["com", "io", "ai"],
+          enabledStyles: ["random-short-com"],
+          wordSourceIds: [],
+          targetHits: 25,
+          concurrency: 2,
+          scoreThreshold: 58,
+        }),
+      }),
+    );
+  });
 });

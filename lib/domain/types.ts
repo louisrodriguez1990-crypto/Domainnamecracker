@@ -1,10 +1,20 @@
 export const SUPPORTED_TLDS = ["com", "io", "ai"] as const;
-export const STYLE_OPTIONS = ["keyword", "brandable", "single-word-com"] as const;
+export const STYLE_OPTIONS = [
+  "keyword",
+  "brandable",
+  "single-word-com",
+  "random-short-com",
+] as const;
 export const DICTIONARY_SOURCE_ID = "builtin-dictionary";
 
 export type SupportedTld = (typeof SUPPORTED_TLDS)[number];
 export type GeneratedCandidateStyle = (typeof STYLE_OPTIONS)[number];
 export type CandidateStyle = GeneratedCandidateStyle | "manual";
+const SOURCE_FREE_STYLES = new Set<GeneratedCandidateStyle>(["random-short-com"]);
+const COM_ONLY_STYLES = new Set<GeneratedCandidateStyle>([
+  "single-word-com",
+  "random-short-com",
+]);
 export type RunStatus =
   | "running"
   | "completed"
@@ -62,6 +72,23 @@ export type RunConfig = {
   manualDomains?: string[];
   recheckExisting?: boolean;
 };
+
+export function allowsSourceFreeRun(
+  config: Pick<RunConfig, "enabledStyles" | "manualDomains">,
+) {
+  return Boolean(config.manualDomains?.length) ||
+    (config.enabledStyles.length > 0 &&
+      config.enabledStyles.every((style) => SOURCE_FREE_STYLES.has(style)));
+}
+
+export function requiresComOnlyStyles(
+  config: Pick<RunConfig, "enabledStyles">,
+) {
+  return (
+    config.enabledStyles.length > 0 &&
+    config.enabledStyles.every((style) => COM_ONLY_STYLES.has(style))
+  );
+}
 
 export type RunRecord = {
   id: string;

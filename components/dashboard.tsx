@@ -4,6 +4,8 @@ import { startTransition, useEffect, useEffectEvent, useRef, useState } from "re
 
 import {
   DICTIONARY_SOURCE_ID,
+  allowsSourceFreeRun,
+  requiresComOnlyStyles,
   type GeneratedCandidateStyle,
   type HistoryPayload,
   type RunSnapshot,
@@ -16,6 +18,7 @@ const STYLE_OPTIONS = [
   { id: "keyword" as const, label: "Keyword compounds", description: "Real-word combinations." },
   { id: "brandable" as const, label: "Brandable mashups", description: "Short clipped blends." },
   { id: "single-word-com" as const, label: "Single-word .com", description: "Standalone words checked only on .com." },
+  { id: "random-short-com" as const, label: "Pronounceable short .com", description: "Random 3, 4, and 5 letter names built from speakable letter patterns." },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -132,7 +135,12 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
     setErrorMessage(null);
     if (!selectedTlds.length) return setErrorMessage("Pick at least one TLD.");
     if (!selectedStyles.length) return setErrorMessage("Enable at least one name style.");
-    if (!selectedSources.length) return setErrorMessage("Select at least one word source.");
+    if (requiresComOnlyStyles({ enabledStyles: selectedStyles }) && !selectedTlds.includes("com")) {
+      return setErrorMessage("Enable .com when you run single-word or short random .com scans.");
+    }
+    if (!selectedSources.length && !allowsSourceFreeRun({ enabledStyles: selectedStyles })) {
+      return setErrorMessage("Select at least one word source.");
+    }
     setIsSubmitting(true);
     try {
       const payload = (await postJson("/api/runs", {
@@ -235,7 +243,7 @@ export function Dashboard(props: { initialHistory: HistoryPayload; initialRun: R
                 Generate valuable domain combinations and sift live availability without an LLM in the loop.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-stone-700 sm:text-lg">
-                Keyword compounds, brandable mashups, and single-word `.com` ideas are built from curated or uploaded words, scored in-app, then checked against RDAP with conservative retries and persistent history.
+                Keyword compounds, brandable mashups, pronounceable short `.com` names, and single-word `.com` ideas are built in-app, scored locally, then checked against RDAP with conservative retries and persistent history.
               </p>
               <div className="flex flex-wrap gap-3 text-sm text-stone-800">
                 <span className="rounded-full border border-amber-200 bg-amber-100 px-4 py-2">Pure code generation</span>

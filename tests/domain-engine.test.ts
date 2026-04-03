@@ -66,6 +66,35 @@ describe("domain generator", () => {
     ).toBe(true);
   });
 
+  it("builds pronounceable random short .com candidates without word sources", () => {
+    const candidates = buildCandidates(
+      {
+        selectedTlds: ["com"],
+        enabledStyles: ["random-short-com"],
+        wordSourceIds: [],
+        targetHits: 25,
+        concurrency: 2,
+        scoreThreshold: 58,
+      },
+      [],
+    );
+
+    expect(candidates.length).toBeGreaterThan(100);
+    expect(
+      candidates.every(
+        (candidate) =>
+          candidate.fullDomains.length === 1 &&
+          candidate.fullDomains[0]?.endsWith(".com") &&
+          candidate.label.length >= 3 &&
+          candidate.label.length <= 5 &&
+          /[aeiou]/.test(candidate.label),
+      ),
+    ).toBe(true);
+    expect(new Set(candidates.map((candidate) => candidate.label)).size).toBe(
+      candidates.length,
+    );
+  });
+
   it("keeps the large dictionary source out of the dashboard payload buckets", () => {
     const dictionarySource = getPublicBuiltInSources().find(
       (source) => source.id === DICTIONARY_SOURCE_ID,

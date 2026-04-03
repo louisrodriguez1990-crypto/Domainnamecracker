@@ -16,6 +16,7 @@ import type {
   WordBuckets,
   WordSource,
 } from "@/lib/domain/types";
+import { allowsSourceFreeRun } from "@/lib/domain/types";
 import { createUploadBuckets } from "@/lib/domain/normalization";
 import { DomainHunterStore } from "@/lib/server/store";
 
@@ -110,7 +111,7 @@ export class RunManager {
 
     const selectedSources = this.store.getWordSourcesByIds(config.wordSourceIds);
 
-    if (selectedSources.length === 0 && !(config.manualDomains?.length ?? 0)) {
+    if (selectedSources.length === 0 && !allowsSourceFreeRun(config)) {
       throw new Error("Select at least one word source before starting a scan.");
     }
 
