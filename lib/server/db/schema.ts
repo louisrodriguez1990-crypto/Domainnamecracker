@@ -65,10 +65,12 @@ export const checkedDomainsTable = sqliteTable("checked_domains", {
   sourceWords: text("source_words").notNull(),
   score: real("score").notNull(),
   status: text("status").notNull(),
+  stage: text("stage").notNull().default("definitive"),
   provider: text("provider").notNull(),
   confidence: real("confidence").notNull(),
   note: text("note").notNull(),
   checkedAt: text("checked_at").notNull(),
+  expiresAt: text("expires_at"),
   lastRunId: text("last_run_id").notNull(),
 });
 

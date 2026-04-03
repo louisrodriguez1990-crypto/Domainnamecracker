@@ -130,6 +130,15 @@ function chunk<T>(values: T[], size: number): T[][] {
   return groups;
 }
 
+function isExpiredPreliminaryResult(row: CheckedDomainRow) {
+  return (
+    row.stage === "preliminary" &&
+    typeof row.expiresAt === "string" &&
+    row.expiresAt.length > 0 &&
+    Date.parse(row.expiresAt) <= Date.now()
+  );
+}
+
 export class DomainHunterStore {
   readonly sqlite: Database.Database;
   readonly db: DatabaseShape;
@@ -201,10 +210,12 @@ export class DomainHunterStore {
         source_words TEXT NOT NULL,
         score REAL NOT NULL,
         status TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'definitive',
         provider TEXT NOT NULL,
         confidence REAL NOT NULL,
         note TEXT NOT NULL,
         checked_at TEXT NOT NULL,
+        expires_at TEXT,
         last_run_id TEXT NOT NULL
       );
 
@@ -234,7 +245,25 @@ export class DomainHunterStore {
       CREATE INDEX IF NOT EXISTS run_results_checked_at_idx ON run_results(checked_at);
     `);
 
+    this.ensureCheckedDomainColumns();
     this.markInterruptedRuns();
+  }
+
+  private ensureCheckedDomainColumns() {
+    const columns = this.sqlite
+      .prepare<[], { name: string }>("pragma table_info(checked_domains)")
+      .all()
+      .map((column) => column.name);
+
+    if (!columns.includes("stage")) {
+      this.sqlite.exec(
+        "ALTER TABLE checked_domains ADD COLUMN stage TEXT NOT NULL DEFAULT 'definitive'",
+      );
+    }
+
+    if (!columns.includes("expires_at")) {
+      this.sqlite.exec("ALTER TABLE checked_domains ADD COLUMN expires_at TEXT");
+    }
   }
 
   private markInterruptedRuns() {
@@ -385,11 +414,25 @@ export class DomainHunterStore {
   }
 
   getCheckedDomain(domain: string): CheckedDomainRow | undefined {
-    return this.db
+    const row = this.db
       .select()
       .from(checkedDomainsTable)
       .where(eq(checkedDomainsTable.domain, domain))
       .get();
+
+    if (!row) {
+      return undefined;
+    }
+
+    if (isExpiredPreliminaryResult(row)) {
+      this.db
+        .delete(checkedDomainsTable)
+        .where(eq(checkedDomainsTable.domain, domain))
+        .run();
+      return undefined;
+    }
+
+    return row;
   }
 
   setCurrentCandidate(runId: string, domain: string) {
@@ -437,14 +480,99 @@ export class DomainHunterStore {
       .run();
   }
 
+  incrementChecked(runId: string, amount: number, currentCandidate: string) {
+    if (amount <= 0) {
+      return;
+    }
+
+    this.db
+      .update(runsTable)
+      .set({
+        checkedCount: sql`${runsTable.checkedCount} + ${amount}`,
+        currentCandidate,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(runsTable.id, runId))
+      .run();
+  }
+
+  recordPreliminaryBatch(input: {
+    runId: string;
+    screens: Array<{
+      candidate: Candidate;
+      domain: string;
+      result: AvailabilityResult;
+    }>;
+    checkedCountIncrement: number;
+    currentCandidate: string;
+  }) {
+    const transaction = this.sqlite.transaction(() => {
+      for (const screen of input.screens) {
+        const tld = screen.domain.split(".").pop() as SupportedTld;
+
+        this.db
+          .insert(checkedDomainsTable)
+          .values({
+            domain: screen.domain,
+            label: screen.candidate.label,
+            tld,
+            style: screen.candidate.style,
+            sourceWords: JSON.stringify(screen.candidate.sourceWords),
+            score: screen.candidate.score,
+            status: screen.result.status,
+            stage: screen.result.stage ?? "preliminary",
+            provider: screen.result.provider,
+            confidence: screen.result.confidence,
+            note: screen.result.note,
+            checkedAt: screen.result.checkedAt,
+            expiresAt: screen.result.expiresAt ?? null,
+            lastRunId: input.runId,
+          })
+          .onConflictDoUpdate({
+            target: checkedDomainsTable.domain,
+            set: {
+              label: screen.candidate.label,
+              tld,
+              style: screen.candidate.style,
+              sourceWords: JSON.stringify(screen.candidate.sourceWords),
+              score: screen.candidate.score,
+              status: screen.result.status,
+              stage: screen.result.stage ?? "preliminary",
+              provider: screen.result.provider,
+              confidence: screen.result.confidence,
+              note: screen.result.note,
+              checkedAt: screen.result.checkedAt,
+              expiresAt: screen.result.expiresAt ?? null,
+              lastRunId: input.runId,
+            },
+          })
+          .run();
+      }
+
+      this.db
+        .update(runsTable)
+        .set({
+          checkedCount: sql`${runsTable.checkedCount} + ${input.checkedCountIncrement}`,
+          currentCandidate: input.currentCandidate,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(runsTable.id, input.runId))
+        .run();
+    });
+
+    transaction();
+  }
+
   recordCheckResult(input: {
     runId: string;
     candidate: Candidate;
     domain: string;
     result: AvailabilityResult;
     manual: boolean;
+    incrementChecked?: boolean;
   }) {
     const tld = input.domain.split(".").pop() as SupportedTld;
+    const incrementChecked = input.incrementChecked ?? true;
 
     const transaction = this.sqlite.transaction(() => {
       this.db
@@ -457,10 +585,12 @@ export class DomainHunterStore {
           sourceWords: JSON.stringify(input.candidate.sourceWords),
           score: input.candidate.score,
           status: input.result.status,
+          stage: input.result.stage ?? "definitive",
           provider: input.result.provider,
           confidence: input.result.confidence,
           note: input.result.note,
           checkedAt: input.result.checkedAt,
+          expiresAt: input.result.expiresAt ?? null,
           lastRunId: input.runId,
         })
         .onConflictDoUpdate({
@@ -472,10 +602,12 @@ export class DomainHunterStore {
             sourceWords: JSON.stringify(input.candidate.sourceWords),
             score: input.candidate.score,
             status: input.result.status,
+            stage: input.result.stage ?? "definitive",
             provider: input.result.provider,
             confidence: input.result.confidence,
             note: input.result.note,
             checkedAt: input.result.checkedAt,
+            expiresAt: input.result.expiresAt ?? null,
             lastRunId: input.runId,
           },
         })
@@ -504,9 +636,12 @@ export class DomainHunterStore {
       this.db
         .update(runsTable)
         .set({
-          checkedCount: sql`${runsTable.checkedCount} + 1`,
+          checkedCount: incrementChecked
+            ? sql`${runsTable.checkedCount} + 1`
+            : sql`${runsTable.checkedCount}`,
           availableCount:
-            input.result.status === "available"
+            input.result.status === "available" &&
+            (input.result.stage ?? "definitive") === "definitive"
               ? sql`${runsTable.availableCount} + 1`
               : sql`${runsTable.availableCount}`,
           currentCandidate: input.domain,

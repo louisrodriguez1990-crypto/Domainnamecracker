@@ -11,10 +11,10 @@ The app automatically switches to hosted mode when it sees `POSTGRES_URL_NON_POO
 
 ## What it does
 
-- Generates keyword compounds and brandable mashups from built-in and uploaded word lists
-- Includes a dictionary-backed source for exhaustive single-word `.com` sweeps
+- Generates keyword compounds, pronounceable short names, and brandable mashups from built-in and uploaded word lists
+- Includes a dictionary-backed source for exhaustive single-word sweeps across your selected TLDs
 - Scores candidates before they hit the availability worker
-- Checks domains with a best-effort RDAP provider by default
+- Prefers Name.com when configured, otherwise falls back to an external checker or RDAP
 - Stores word sources, runs, and check results so later scans can skip repeats
 - Lets you stop runs, export hits, and manually recheck domains from the UI
 
@@ -50,6 +50,21 @@ NEON_DATABASE_URL=
 
 Only one is needed.
 
+Optional Name.com integration:
+
+```bash
+NAMECOM_API_USERNAME=
+NAMECOM_API_TOKEN=
+NAMECOM_API_BASE_URL=
+```
+
+If `NAMECOM_API_USERNAME` and `NAMECOM_API_TOKEN` are both set, the app uses the Name.com CORE API first:
+
+- `Zone Check` for high-volume preliminary screening
+- `Check Availability` for live confirmation of promising domains
+
+Only live-confirmed purchasable domains count as hits.
+
 Optional external checker seam:
 
 ```bash
@@ -57,7 +72,9 @@ DOMAIN_CHECK_HTTP_URL=
 DOMAIN_CHECK_HTTP_TOKEN=
 ```
 
-If set, the app will call your external availability endpoint instead of the built-in RDAP checker.
+If Name.com is not configured and `DOMAIN_CHECK_HTTP_URL` is set, the app will call your external availability endpoint instead of the built-in RDAP checker.
+
+Name.com and external checker credentials stay server-side only. Do not place them in `NEXT_PUBLIC_*` variables. If you have ever pasted a real Name.com token into chat or another shared surface, rotate it before production use.
 
 ## Tests and verification
 

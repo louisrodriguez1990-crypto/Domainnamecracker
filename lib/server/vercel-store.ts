@@ -81,10 +81,12 @@ type CheckedDomainRow = {
   source_words: string[];
   score: number;
   status: RunResultRecord["status"];
+  stage: "preliminary" | "definitive";
   provider: string;
   confidence: number;
   note: string;
   checked_at: PostgresPrimitive;
+  expires_at: PostgresPrimitive;
   last_run_id: string;
 };
 
@@ -157,6 +159,14 @@ function mapRunResult(row: RunResultRow): RunResultRecord {
   };
 }
 
+function isExpiredPreliminaryResult(row: CheckedDomainRow) {
+  return (
+    row.stage === "preliminary" &&
+    row.expires_at !== null &&
+    new Date(toIso(row.expires_at)).getTime() <= Date.now()
+  );
+}
+
 export class VercelStore {
   private readonly sql = getPostgresClient();
   private initialized: Promise<void> | null = null;
@@ -216,12 +226,23 @@ export class VercelStore {
         source_words jsonb not null,
         score double precision not null,
         status text not null,
+        stage text not null default 'definitive',
         provider text not null,
         confidence double precision not null,
         note text not null,
         checked_at timestamptz not null,
+        expires_at timestamptz null,
         last_run_id text not null
       );
+    `;
+
+    await this.sql`
+      alter table checked_domains
+      add column if not exists stage text not null default 'definitive'
+    `;
+    await this.sql`
+      alter table checked_domains
+      add column if not exists expires_at timestamptz null
     `;
 
     await this.sql`
@@ -401,7 +422,21 @@ export class VercelStore {
       where domain = ${domain}
       limit 1
     `;
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+
+    if (!row) {
+      return null;
+    }
+
+    if (isExpiredPreliminaryResult(row)) {
+      await this.sql`
+        delete from checked_domains
+        where domain = ${domain}
+      `;
+      return null;
+    }
+
+    return row;
   }
 
   async setCurrentCandidate(runId: string, domain: string) {
@@ -445,21 +480,99 @@ export class VercelStore {
     `;
   }
 
+  async incrementChecked(runId: string, amount: number, currentCandidate: string) {
+    await this.init();
+
+    if (amount <= 0) {
+      return;
+    }
+
+    await this.sql`
+      update runs
+      set checked_count = checked_count + ${amount},
+          current_candidate = ${currentCandidate},
+          updated_at = now()
+      where id = ${runId}
+    `;
+  }
+
+  async recordPreliminaryBatch(input: {
+    runId: string;
+    screens: Array<{
+      candidate: Candidate;
+      domain: string;
+      result: AvailabilityResult;
+    }>;
+    checkedCountIncrement: number;
+    currentCandidate: string;
+  }) {
+    await this.init();
+
+    for (const screen of input.screens) {
+      const tld = screen.domain.split(".").pop() as SupportedTld;
+
+      await this.sql`
+        insert into checked_domains (
+          domain, label, tld, style, source_words, score, status, stage, provider,
+          confidence, note, checked_at, expires_at, last_run_id
+        )
+        values (
+          ${screen.domain},
+          ${screen.candidate.label},
+          ${tld},
+          ${screen.candidate.style},
+          ${this.sql.json(screen.candidate.sourceWords)},
+          ${screen.candidate.score},
+          ${screen.result.status},
+          ${screen.result.stage ?? "preliminary"},
+          ${screen.result.provider},
+          ${screen.result.confidence},
+          ${screen.result.note},
+          ${screen.result.checkedAt},
+          ${screen.result.expiresAt ?? null},
+          ${input.runId}
+        )
+        on conflict (domain) do update set
+          label = excluded.label,
+          tld = excluded.tld,
+          style = excluded.style,
+          source_words = excluded.source_words,
+          score = excluded.score,
+          status = excluded.status,
+          stage = excluded.stage,
+          provider = excluded.provider,
+          confidence = excluded.confidence,
+          note = excluded.note,
+          checked_at = excluded.checked_at,
+          expires_at = excluded.expires_at,
+          last_run_id = excluded.last_run_id
+      `;
+    }
+
+    await this.incrementChecked(
+      input.runId,
+      input.checkedCountIncrement,
+      input.currentCandidate,
+    );
+  }
+
   async recordCheckResult(input: {
     runId: string;
     candidate: Candidate;
     domain: string;
     result: AvailabilityResult;
     manual: boolean;
+    incrementChecked?: boolean;
   }) {
     await this.init();
     const tld = input.domain.split(".").pop() as SupportedTld;
     const cached = false;
+    const incrementChecked = input.incrementChecked ?? true;
 
     await this.sql`
       insert into checked_domains (
-        domain, label, tld, style, source_words, score, status, provider,
-        confidence, note, checked_at, last_run_id
+        domain, label, tld, style, source_words, score, status, stage, provider,
+        confidence, note, checked_at, expires_at, last_run_id
       )
       values (
         ${input.domain},
@@ -469,10 +582,12 @@ export class VercelStore {
         ${this.sql.json(input.candidate.sourceWords)},
         ${input.candidate.score},
         ${input.result.status},
+        ${input.result.stage ?? "definitive"},
         ${input.result.provider},
         ${input.result.confidence},
         ${input.result.note},
         ${input.result.checkedAt},
+        ${input.result.expiresAt ?? null},
         ${input.runId}
       )
       on conflict (domain) do update set
@@ -482,10 +597,12 @@ export class VercelStore {
         source_words = excluded.source_words,
         score = excluded.score,
         status = excluded.status,
+        stage = excluded.stage,
         provider = excluded.provider,
         confidence = excluded.confidence,
         note = excluded.note,
         checked_at = excluded.checked_at,
+        expires_at = excluded.expires_at,
         last_run_id = excluded.last_run_id
     `;
 
@@ -514,8 +631,13 @@ export class VercelStore {
 
     await this.sql`
       update runs
-      set checked_count = checked_count + 1,
-          available_count = available_count + ${input.result.status === "available" ? 1 : 0},
+      set checked_count = checked_count + ${incrementChecked ? 1 : 0},
+          available_count = available_count + ${
+            input.result.status === "available" &&
+            (input.result.stage ?? "definitive") === "definitive"
+              ? 1
+              : 0
+          },
           current_candidate = ${input.domain},
           last_error = ${input.result.status === "unknown" ? input.result.note : null},
           updated_at = ${input.result.checkedAt}

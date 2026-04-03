@@ -28,6 +28,7 @@ export type RunStatus =
   | "interrupted"
   | "exhausted";
 export type AvailabilityStatus = "available" | "taken" | "unknown";
+export type AvailabilityStage = "preliminary" | "definitive";
 export type WordSourceKind = "builtin" | "upload";
 
 export type WordBuckets = {
@@ -65,6 +66,8 @@ export type AvailabilityResult = {
   checkedAt: string;
   confidence: number;
   note: string;
+  stage?: AvailabilityStage;
+  expiresAt?: string | null;
   retryAfterMs?: number | null;
 };
 

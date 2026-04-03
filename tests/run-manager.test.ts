@@ -20,6 +20,39 @@ class MockProvider implements AvailabilityProvider {
   }
 }
 
+class MockHybridProvider implements AvailabilityProvider {
+  readonly name = "mock-namecom";
+
+  constructor(
+    private readonly options: {
+      screenDomains: (domains: string[]) => AvailabilityResult[] | Promise<AvailabilityResult[]>;
+      checkDomains: (domains: string[]) => AvailabilityResult[] | Promise<AvailabilityResult[]>;
+    },
+  ) {}
+
+  async checkDomain(domain: string) {
+    const [result] = await this.options.checkDomains([domain]);
+
+    return result ?? {
+      domain,
+      status: "unknown",
+      provider: this.name,
+      checkedAt: new Date().toISOString(),
+      confidence: 0.2,
+      note: "missing live result",
+      stage: "definitive",
+    };
+  }
+
+  async screenDomains(domains: string[]) {
+    return this.options.screenDomains(domains);
+  }
+
+  async checkDomains(domains: string[]) {
+    return this.options.checkDomains(domains);
+  }
+}
+
 async function waitForRun(manager: RunManager, runId: string) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const snapshot = manager.getRunSnapshot(runId);
@@ -210,6 +243,149 @@ describe("run manager", () => {
     expect(finished.run.status).toBe("exhausted");
     expect(totalCooldownSleepMs).toBeGreaterThanOrEqual(120_000);
     expect(sleepCalls.some((ms) => ms >= 1_250 && ms < 5_000)).toBe(true);
+
+    store.close();
+  });
+
+  it("counts hybrid Name.com scans once per screened domain and only counts live-confirmed hits", async () => {
+    const store = new DomainHunterStore(":memory:");
+    const manager = new RunManager({
+      store,
+      provider: new MockHybridProvider({
+        screenDomains: (domains) =>
+          domains.map((domain) => ({
+            domain,
+            status: "available",
+            provider: "mock-namecom",
+            checkedAt: new Date().toISOString(),
+            confidence: 0.82,
+            note: "screened as promising",
+            stage: "preliminary",
+          })),
+        checkDomains: (domains) =>
+          domains.map((domain) => ({
+            domain,
+            status: domain === "signalforge.com" ? "available" : "taken",
+            provider: "mock-namecom",
+            checkedAt: new Date().toISOString(),
+            confidence: 0.99,
+            note: "live result",
+            stage: "definitive",
+          })),
+      }),
+      sleeper: async () => undefined,
+    });
+
+    const source = manager.createUploadSource({
+      name: "Hybrid Source",
+      description: "Two words for a small hybrid batch.",
+      words: ["signal", "forge"],
+    });
+
+    const run = await manager.startRun({
+      selectedTlds: ["com"],
+      enabledStyles: ["keyword"],
+      wordSourceIds: [source.id],
+      targetHits: 1,
+      concurrency: 1,
+      scoreThreshold: 0,
+    });
+
+    const finished = await waitForRun(manager, run.run.id);
+
+    expect(finished.run.status).toBe("completed");
+    expect(finished.run.checkedCount).toBeGreaterThan(0);
+    expect(finished.run.availableCount).toBe(1);
+    expect(finished.recentResults.every((result) => result.provider === "mock-namecom")).toBe(true);
+
+    store.close();
+  });
+
+  it("expires preliminary negatives so later runs can re-screen them", async () => {
+    const store = new DomainHunterStore(":memory:");
+    const checkedAt = new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString();
+
+    store.recordPreliminaryBatch({
+      runId: store.createRun({
+        selectedTlds: ["com"],
+        enabledStyles: ["keyword"],
+        wordSourceIds: [],
+        targetHits: 1,
+        concurrency: 1,
+      }, 0).id,
+      screens: [
+        {
+          candidate: {
+            label: "alpha",
+            style: "keyword",
+            sourceWords: ["alpha"],
+            score: 80,
+            fullDomains: ["alpha.com"],
+          },
+          domain: "alpha.com",
+          result: {
+            domain: "alpha.com",
+            status: "taken",
+            provider: "mock-namecom",
+            checkedAt,
+            confidence: 0.78,
+            note: "cached preliminary negative",
+            stage: "preliminary",
+            expiresAt: new Date(Date.now() - 1000).toISOString(),
+          },
+        },
+      ],
+      checkedCountIncrement: 1,
+      currentCandidate: "alpha.com",
+    });
+
+    expect(store.getCheckedDomain("alpha.com")).toBeUndefined();
+
+    store.close();
+  });
+
+  it("bypasses preliminary screening for manual rechecks on hybrid providers", async () => {
+    const store = new DomainHunterStore(":memory:");
+    let screenCalls = 0;
+    let liveCalls = 0;
+    const manager = new RunManager({
+      store,
+      provider: new MockHybridProvider({
+        screenDomains: (domains) => {
+          screenCalls += domains.length;
+          return [];
+        },
+        checkDomains: (domains) => {
+          liveCalls += domains.length;
+          return domains.map((domain) => ({
+            domain,
+            status: "taken",
+            provider: "mock-namecom",
+            checkedAt: new Date().toISOString(),
+            confidence: 0.99,
+            note: "manual live result",
+            stage: "definitive",
+          }));
+        },
+      }),
+      sleeper: async () => undefined,
+    });
+
+    const snapshot = await manager.startRun({
+      selectedTlds: ["com"],
+      enabledStyles: ["keyword"],
+      wordSourceIds: [],
+      targetHits: 1,
+      concurrency: 1,
+      scoreThreshold: 0,
+      manualDomains: ["alpha.com"],
+      recheckExisting: true,
+    });
+
+    await waitForRun(manager, snapshot.run.id);
+
+    expect(screenCalls).toBe(0);
+    expect(liveCalls).toBe(1);
 
     store.close();
   });
