@@ -18,7 +18,7 @@ type RdapClassification = Omit<AvailabilityResult, "domain" | "checkedAt" | "pro
 type NameComZonePayload = {
   results?: Array<{
     domainName?: string;
-    available?: boolean;
+    available?: boolean | null;
   }>;
   total?: number;
   removed?: number;
@@ -607,9 +607,10 @@ class NameComProvider implements HybridAvailabilityProvider {
         cache: "no-store",
       });
       const checkedAt = new Date().toISOString();
-      const retryAfterMs = parseRetryAfterHeader(
-        response.headers.get("retry-after"),
-      );
+      const resetHeader = response.headers.get("x-ratelimit-reset");
+      const retryAfterMs = resetHeader
+        ? Math.max(Number(resetHeader) * 1000 - Date.now(), 0)
+        : parseRetryAfterHeader(response.headers.get("retry-after"));
       const payload = await readResponsePayload(response);
 
       if (!response.ok) {

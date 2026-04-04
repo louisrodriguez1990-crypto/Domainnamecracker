@@ -199,7 +199,9 @@ describe("availability providers", () => {
         ),
     });
 
-    expect(isHybridAvailabilityProvider(provider)).toBe(true);
+    if (!isHybridAvailabilityProvider(provider)) {
+      throw new Error("expected hybrid provider");
+    }
 
     const results = await provider.screenDomains(["alpha.com", "beta.com"]);
 
@@ -218,7 +220,9 @@ describe("availability providers", () => {
       },
     });
 
-    expect(isHybridAvailabilityProvider(provider)).toBe(true);
+    if (!isHybridAvailabilityProvider(provider)) {
+      throw new Error("expected hybrid provider");
+    }
 
     const [result] = await provider.screenDomains(["alpha.com"]);
 
@@ -248,7 +252,9 @@ describe("availability providers", () => {
         ),
     });
 
-    expect(isHybridAvailabilityProvider(provider)).toBe(true);
+    if (!isHybridAvailabilityProvider(provider)) {
+      throw new Error("expected hybrid provider");
+    }
 
     const [result] = await provider.checkDomains(["alpha.com"]);
 
@@ -277,7 +283,9 @@ describe("availability providers", () => {
         ),
     });
 
-    expect(isHybridAvailabilityProvider(provider)).toBe(true);
+    if (!isHybridAvailabilityProvider(provider)) {
+      throw new Error("expected hybrid provider");
+    }
 
     const [result] = await provider.screenDomains(["alpha.com"]);
 

@@ -92,7 +92,7 @@ describe("dashboard", () => {
       kind: "upload" as const,
     };
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
 
       if (url === "/api/word-sources") {
@@ -172,7 +172,7 @@ describe("dashboard", () => {
       },
     };
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
 
       if (url === "/api/runs") {
@@ -240,7 +240,7 @@ describe("dashboard", () => {
       },
     };
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
 
       if (url === "/api/runs") {
@@ -296,7 +296,7 @@ describe("dashboard", () => {
   });
 
   it("lets you disable Name.com per run when credentials are configured", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
 
       if (url === "/api/runs") {
